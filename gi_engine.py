@@ -381,6 +381,10 @@ class GIEngine:
         self.gnssdata_ = gnss
         self.gnssdata_.isvalid = True
     
+    def addBleData(self,ble:ty.BLE):
+        self.bledata_ = ble
+        self.bledata_.isvalid = True
+    
     @staticmethod
     def imuInterpolate(imu1:ty.IMU,imu2:ty.IMU,timestamp:float,midimu:ty.IMU,):
         if imu1.time > timestamp or imu2.time < timestamp:

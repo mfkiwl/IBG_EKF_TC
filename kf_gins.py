@@ -1,6 +1,7 @@
 from angle import Angle
 import gi_engine as gi
 import numpy as np
+import pandas as pd
 import kf_gins_types as ky
 import types_my as ty
 import sys
@@ -81,7 +82,17 @@ def gnssload(data_):
     gnss_.blh[1] *= Angle.D2R
     return(gnss_)
 
-def align(imu_data,gnss_data,starttime):
+def bleload(data_):
+    ble_ = ty.BLE()
+    ble_.time = data_['t']
+    ble_.AP = len(data_['rssi'])
+    ble_.RSSI = data_['rssi']
+    ble_.blh = data_['coord']
+    ble_.blh[0] *= Angle.D2R
+    ble_.blh[1] *= Angle.D2R
+    return(ble_)
+
+def align(imu_data,gnss_data,ble_data,starttime):
     imu_cur = ty.IMU()
     gnss = ty.GNSS()
     imu_index = 0
@@ -98,36 +109,59 @@ def align(imu_data,gnss_data,starttime):
         gnss_index = index
         if row[0] > starttime:
             break
-    return imu_cur,gnss,imu_index,gnss_index,p_t
+    for index,row in ble_data.iterrows():
+        ble = bleload(row)
+        ble_index = index
+        if row['t'] > starttime:
+            break
 
+    return imu_cur,gnss,ble,imu_index,gnss_index,ble_index,p_t
 
+## 初始化
 nav_result = np.empty((0, 10))
 options = LoadOptions()
-
 giengine = gi.GIEngine()
 giengine.GIFunction(options)
-
 imudatarate = config['imudatarate']
 starttime = config['starttime']
 endtime = config['endtime']
 pre_time = starttime
+
+
+## 读取数据
 imu_data = np.genfromtxt(config['imupath'],delimiter=',')
 gnss_data = np.genfromtxt(config['gnsspath'],delimiter=',')
+ble_data = pd.read_csv(config['blepath'], header=None, names=['t','rssi','coord','id'])
+ble_data['rssi'] = ble_data['rssi'].apply(lambda x: np.array(x))
+ble_data['coord'] = ble_data['coord'].apply(lambda x: np.array(x))
+ble_data['id'] = ble_data['id'].apply(lambda x: np.array(x))
+
+
 if endtime < 0 :
     endtime = gnss_data[-1, 0]
 
-imu_cur,gnss,is_index,gs_index,pre_time = align(imu_data,gnss_data,starttime)
+imu_cur,gnss,ble,is_index,gs_index,bs_index,pre_time = align(imu_data,gnss_data,starttime)
 
+## 初始数据载入
 giengine.addImuData(imu_cur, True)
 giengine.addGnssData(gnss)
+giengine.addBleData(ble)
+
 for row in imu_data[is_index+1:]:
-    
+
     if gnss.time < imu_cur.time and gnss.time+1!= endtime:
         gnss = gnssload(gnss_data[gs_index])
         gs_index += 1
         giengine.addGnssData(gnss)
-    
+
+    if ble.time < imu_cur.time and ble_data[bs_index+1]['t'] < endtime:
+        ble = bleload(ble_data.iloc[bs_index])
+        bs_index += 1
+        giengine.addBleData(ble)
+
+
     imu_cur,pre_time = imuload(row,imudatarate,pre_time)
+
     if imu_cur.time > endtime:
         break
     giengine.addImuData(imu_cur)
@@ -143,6 +177,7 @@ for row in imu_data[is_index+1:]:
 
     sys.stdout.write('\r' + str(timestamp))
     sys.stdout.flush()
+
 np.savetxt(config['outputpath'], nav_result, delimiter=",",fmt="%6f")    
 
 
