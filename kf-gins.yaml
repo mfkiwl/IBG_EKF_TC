@@ -5,13 +5,14 @@
 
 # IMU和GNSS数据文件路径
 # imudata and gnssdata filepath
-imupath: 'C:\Users\Administrator\Desktop\WSN+IMU定位\数据\2023.6.1晚上实验数据\实车数据\数据处理结果\2023-06-01 2046\IMU_2023-06-01 2046改.csv'
-gnsspath: 'C:\Users\Administrator\Desktop\WSN+IMU定位\数据\2023.6.1晚上实验数据\实车数据\数据处理结果\2023-06-01 2046\内部手机卫星定位结果改2046.csv'
-blepath: 'C:\Users\Administrator\Desktop\WSN+IMU定位\数据\测试集\RSSI仿真数据.csv'
+imupath: 'E:\BaiduSyncdisk\数据\测试集\IMU测试集.csv'
+gnsspath: 'E:\BaiduSyncdisk\数据\测试集\GNSS测试集.csv'
+blepath: 'E:\BaiduSyncdisk\数据\测试集\RSSI仿真数据.csv'
 
 # 输出文件夹路径
 # output folder path
-outputpath: 'C:\Users\Administrator\Desktop\WSN+IMU定位\数据\2023.6.1晚上实验数据\实车数据\数据处理结果\2023-06-01 2046\内部KF定位结果2046手机.csv'
+outputpath_nav: 'C:\Users\69589\Desktop\WSN+IMU定位\测试定位结果.csv'
+outputpath_error: 'C:\Users\69589\Desktop\WSN+IMU定位\测试误差结果.csv'
 
 # IMU文件列数 (只会用前7列IMU数据)
 # IMU data columns, only use the first seven columns
@@ -23,21 +24,21 @@ imudatarate: 200
 # 处理时间段，结束时间设置为-1时则处理至IMU文件结束
 # processing interval[s]
 # process until the imufile end if set endtime to -1
-starttime: 1685623563
+starttime: 357485
 endtime: -1
 # 初始状态
 # initial state
 # 初始位置, 纬度 经度 高程
 # initial position, latitude, longitude, altitude. [deg, deg, m]
-initpos: [ 23.1579337, 113.3437333, 22.9285 ]
+initpos: [ 30.46045143,114.4719753,22.93866 ]
 
 # 初始速度, 北向速度, 东向速度, 垂向速度
 # initial velocity, speed in the directions of north, east and down. [m/s, m/s, m/s]
-initvel: [ 0.0, 0.0, 0.0 ]
+initvel: [ 0.114,-7.18422,0.00324 ]
 
 # 初始姿态, 欧拉角(ZYX旋转顺序), 横滚, 俯仰, 航向
 # initial attitude, euler angle(ZYX rotation), roll, pitch, yaw [deg, deg, deg]
-initatt: [ 1.384866476,-1.366858721, 265.3240585 ]
+initatt: [ 0.33721,-0.44062,271.39921 ]
 
 # 初始IMU零偏和比例因子, IMU的三个轴(前、右、下)
 # initial IMU bias and scale error, three axes of the imu (forward, right and down)
@@ -71,15 +72,26 @@ initattstd: [ 0.003, 0.003, 0.023 ]
 
 # IMU噪声建模参数, IMU的三个轴
 # IMU noise parameters
-
-arw: [0.3, 0.3, 0.3]         # [deg/sqrt(hr)]
-vrw: [0.04, 0.04, 0.04]        # [m/s/sqrt(hr)]
-gbstd: [15.0, 15.0, 15.0]       # [deg/hr]
+# 数据集的IMU
+arw: [0.2, 0.2, 0.2]         # [deg/sqrt(hr)]
+vrw: [0.1, 0.1, 0.1]        # [m/s/sqrt(hr)]
+gbstd: [20.0, 20.0, 20.0]       # [deg/hr]
 abstd: [100.0, 100.0, 100.0]    # [mGal]
 gsstd: [550.0, 550.0, 550.0]  # [ppm]
 asstd: [300.0, 300.0, 300.0]  # [ppm]
+rsstd: 3.0                      #dBm
 corrtime: 1.0                    # [hr]
+
+#自己的IMU
+# arw: [0.3, 0.3, 0.3]         # [deg/sqrt(hr)]
+# vrw: [0.04, 0.04, 0.04]        # [m/s/sqrt(hr)]
+# gbstd: [15.0, 15.0, 15.0]       # [deg/hr]
+# abstd: [100.0, 100.0, 100.0]    # [mGal]
+# gsstd: [550.0, 550.0, 550.0]  # [ppm]
+# asstd: [300.0, 300.0, 300.0]  # [ppm]
+# rsstd: 3.0                      #dBm
+# corrtime: 1.0                    # [hr]
 
 # 天线杆臂, IMU坐标系前右下方向
 # antenna lever, forward, right and down in the imu frame. [m]
-antlever: [ 0,0,0 ]
+antlever: [0.045, 0.46, -0.238]

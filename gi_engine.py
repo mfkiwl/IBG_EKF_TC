@@ -67,7 +67,7 @@ class GIEngine:
         self.Qc_[NoiseID.BASTD_ID:NoiseID.BASTD_ID+3, NoiseID.BASTD_ID:NoiseID.BASTD_ID+3] = 2/imunoise.corr_time * np.diag(np.square(imunoise.accbias_std))
         self.Qc_[NoiseID.SGSTD_ID:NoiseID.SGSTD_ID+3, NoiseID.SGSTD_ID:NoiseID.SGSTD_ID+3] = 2/imunoise.corr_time * np.diag(np.square(imunoise.gyrscale_std))
         self.Qc_[NoiseID.SASTD_ID:NoiseID.SASTD_ID+3, NoiseID.SASTD_ID:NoiseID.SASTD_ID+3] = 2/imunoise.corr_time * np.diag(np.square(imunoise.accscale_std))
-        self.Qc_[NoiseID.BRSTD_ID:NoiseID.BRSTD_ID+3, NoiseID.BRSTD_ID:NoiseID.BRSTD_ID+3] = np.diag(np.square(rssinoise.rss_std))
+        self.Qc_[NoiseID.BRSTD_ID, NoiseID.BRSTD_ID] = np.square(rssinoise.rss_std)
         ## 设置系统状态(位置、速度、姿态和IMU误差)初值和初始协方差
         initstate = self.options_.initstate
         initstate_std = self.options_.initstate_std
@@ -106,8 +106,8 @@ class GIEngine:
         np.diag(np.square(imuerror_std.gyrscale))
         self.Cov_[StateID.SA_ID:StateID.SA_ID+3,StateID.SA_ID:StateID.SA_ID+3]= \
         np.diag(np.square(imuerror_std.accscale))
-        self.Cov_[StateID.BRSS_ID:StateID.BRSS_ID+3,StateID.BRSS_ID:StateID.BRSS_ID+3]= \
-        np.diag(np.square(rssierror_std.brss))
+        self.Cov_[StateID.BRSS_ID,StateID.BRSS_ID]= \
+        np.square(rssierror_std.brss)
 
     def newImuProcess(self):
         ## 当前IMU时间作为系统当前状态时间
@@ -408,6 +408,7 @@ class GIEngine:
         state.vel  = self.pvacur_.vel
         state.euler  = self.pvacur_.att.euler
         state.imuerror = self.imuerror_
+        state.rssierror = self.rssierro_
         return state
     
     def getCovariance(self) -> np.ndarray:

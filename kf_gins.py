@@ -38,6 +38,7 @@ def LoadOptions():
     options.imunoise.accbias_std = np.array(config['abstd'])
     options.imunoise.gyrscale_std = np.array(config['gsstd'])
     options.imunoise.accscale_std = np.array(config['asstd'])
+    options.rssinoise.rss_std = config['rsstd']
     options.imunoise.corr_time = config['corrtime']
 
     ## 读取IMU误差初始标准差,如果配置文件中没有设置，则采用IMU噪声参数中的零偏和比例因子的标准差
@@ -86,10 +87,10 @@ def bleload(data_):
     ble_ = ty.BLE()
     ble_.time = data_['t']
     ble_.AP = len(data_['rssi'])
-    ble_.RSSI = data_['rssi']
-    ble_.blh = data_['coord']
-    ble_.blh[0] *= Angle.D2R
-    ble_.blh[1] *= Angle.D2R
+    ble_.RSSI = np.array(data_['rssi'])
+    ble_.blh = np.array(data_['coord'])
+    ble_.blh[:][0] *= Angle.D2R
+    ble_.blh[:][1] *= Angle.D2R
     return(ble_)
 
 def align(imu_data,gnss_data,ble_data,starttime):
@@ -140,7 +141,7 @@ ble_data['id'] = ble_data['id'].apply(lambda x: np.array(x))
 if endtime < 0 :
     endtime = gnss_data[-1, 0]
 
-imu_cur,gnss,ble,is_index,gs_index,bs_index,pre_time = align(imu_data,gnss_data,starttime)
+imu_cur,gnss,ble,is_index,gs_index,bs_index,pre_time = align(imu_data,gnss_data,ble_data,starttime)
 
 ## 初始数据载入
 giengine.addImuData(imu_cur, True)
@@ -170,16 +171,19 @@ for row in imu_data[is_index+1:]:
 
     timestamp = giengine.timestamp()
     navstate  = giengine.getNavState()
+    imuerr = navstate.imuerror
+    rssierr = navstate.rssierror
     # cov       = giengine.getCovariance()
-    result = np.array([np.round(timestamp,9),np.round(navstate.pos[1]* Angle.R2D,9),np.round(navstate.pos[0]* Angle.R2D,9),  np.round(navstate.pos[2],9),np.round(navstate.vel[0],9), np.round(navstate.vel[1],9), np.round(navstate.vel[2],9),np.round(navstate.euler[0]* Angle.R2D,9),np.round(navstate.euler[1]* Angle.R2D,9),np.round(navstate.euler[2]* Angle.R2D,9)])
-
-    nav_result = np.vstack((nav_result, result))
+    result1 = np.array([np.round(timestamp,9),np.round(navstate.pos[1]* Angle.R2D,9),np.round(navstate.pos[0]* Angle.R2D,9),  np.round(navstate.pos[2],9),np.round(navstate.vel[0],9), np.round(navstate.vel[1],9), np.round(navstate.vel[2],9),np.round(navstate.euler[0]* Angle.R2D,9),np.round(navstate.euler[1]* Angle.R2D,9),np.round(navstate.euler[2]* Angle.R2D,9)])
+    result2 = np.array([np.round(timestamp,9),np.round(imuerr.gyrbias[0]* Angle.R2D*3600,9),np.round(imuerr.gyrbias[1]* Angle.R2D*3600,9),  np.round(imuerr.gyrbias[2]* Angle.R2D*3600,9),np.round(imuerr.accbias[0]* 1e5,9), np.round(imuerr.accbias[1]* 1e5,9), np.round(imuerr.accbias[2]* 1e5,9),np.round(imuerr.gyrscale[0] * 1e6,9),np.round(imuerr.gyrscale[1] * 1e6,9),np.round(imuerr.gyrscale[2] * 1e6,9),np.round(imuerr.accscale[0] * 1e6,9),np.round(imuerr.accscale[1] * 1e6,9),np.round(imuerr.accscale[2] * 1e6,9),np.round(rssierr.brss,1)])
+    nav_result = np.vstack((nav_result, result1))
+    error_result = np.vstack((error_result, result2))
 
     sys.stdout.write('\r' + str(timestamp))
     sys.stdout.flush()
 
-np.savetxt(config['outputpath'], nav_result, delimiter=",",fmt="%6f")    
-
+np.savetxt(config['outputpath_nav'], nav_result, delimiter=",",fmt="%6f")    
+np.savetxt(config['outputpath_error'], error_result, delimiter=",",fmt="%6f") 
 
 
 
