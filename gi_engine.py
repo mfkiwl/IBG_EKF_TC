@@ -113,18 +113,22 @@ class GIEngine:
         ## 当前IMU时间作为系统当前状态时间
         time = self.imucur_.time
         self.timestamp_ = time
-        ## 如果GNSS有效，则将更新时间设置为GNSS时间
+        ## 如果GNSS有效，则将GNSS更新时间设置为GNSS时间
         if self.gnssdata_.isvalid:
-            updatetime = self.gnssdata_.time
+            updatetime_G = self.gnssdata_.time
         else:
-            updatetime = -1
+            updatetime_G = -1
+        ## 如果BLE有效，则将BLE更新时间设置为BLE时间
+        if self.bledata_.isvalid:
+            updatetime_B = self.bledata_.time
+        else:
+            updatetime_B = -1
         ## 判断是否需要进行GNSS更新
         imupre_ = self.imupre_
         imucur_ = self.imucur_
         gnssdata_ = self.gnssdata_
-        pvacur_ = self.pvacur_
         
-        res = self.isToUpdate(imupre_.time, imucur_.time, updatetime)
+        res = self.isToUpdate(imupre_.time, imucur_.time, updatetime_G)
     
         if res == 0:
             ## 只传播导航状态
@@ -143,7 +147,7 @@ class GIEngine:
         else:
             ## GNSS数据在两个IMU数据之间(不靠近任何一个), 将当前IMU内插到整秒时刻
             midimu = ty.IMU
-            imucur_, midimu = GIEngine.imuInterpolate(imupre_, imucur_, updatetime, midimu)
+            imucur_, midimu = GIEngine.imuInterpolate(imupre_, imucur_, updatetime_G, midimu)
             ## 对前一半IMU进行状态传播
             self.insPropagation(imupre_, midimu)
             ## 整秒时刻进行GNSS更新，并反馈系统状态
@@ -300,14 +304,14 @@ class GIEngine:
         ## GNSS更新之后设置为不可用
         self.gnssdata_.isvalid = False
           
-    def isToUpdate(self,imutime1:float,imutime2:float,updatetime:float) -> int:
-        if np.abs(imutime1 - updatetime) < GIEngine.TIME_ALIGN_ERR :
+    def isToUpdate(self,imutime1:float,imutime2:float,updatetime_G:float) -> int:
+        if np.abs(imutime1 - updatetime_G) < GIEngine.TIME_ALIGN_ERR :
             ## 更新时间靠近imutime1
             return 1
-        elif np.abs(imutime2 - updatetime) <= GIEngine.TIME_ALIGN_ERR :
+        elif np.abs(imutime2 - updatetime_G) <= GIEngine.TIME_ALIGN_ERR :
             ## 更新时间靠近imutime2
             return 2
-        elif imutime1 < updatetime and updatetime < imutime2 :
+        elif imutime1 < updatetime_G and updatetime_G < imutime2 :
             ## 更新时间在imutime1和imutime2之间, 但不靠近任何一个
             return 3
         else:

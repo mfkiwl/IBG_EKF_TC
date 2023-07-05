@@ -133,9 +133,9 @@ pre_time = starttime
 imu_data = np.genfromtxt(config['imupath'],delimiter=',')
 gnss_data = np.genfromtxt(config['gnsspath'],delimiter=',')
 ble_data = pd.read_csv(config['blepath'], header=None, names=['t','rssi','coord','id'])
-ble_data['rssi'] = ble_data['rssi'].apply(lambda x: np.array(x))
-ble_data['coord'] = ble_data['coord'].apply(lambda x: np.array(x))
-ble_data['id'] = ble_data['id'].apply(lambda x: np.array(x))
+ble_data['rssi'] = ble_data['rssi'].apply(lambda x: eval(x))
+ble_data['coord'] = ble_data['coord'].apply(lambda x: eval(x))
+ble_data['id'] = ble_data['id'].apply(lambda x: eval(x))
 
 
 if endtime < 0 :
