@@ -128,18 +128,20 @@ class GIEngine:
         imucur_ = self.imucur_
         gnssdata_ = self.gnssdata_
         
-        res = self.isToUpdate(imupre_.time, imucur_.time, updatetime_G)
+        res_G = self.GisToUpdate(imupre_.time, imucur_.time, updatetime_G)
+        ## 判断是否要进行BLE更新
+        res_B = self.BisToUpdate(imupre_.time, imucur_.time, updatetime_B)
     
-        if res == 0:
+        if res_G == 0:
             ## 只传播导航状态
             self.insPropagation(imupre_, imucur_)
-        elif res == 1:
+        elif res_G == 1:
             ## GNSS数据靠近上一历元，先对上一历元进行GNSS更新
             self.gnssUpdate(gnssdata_)
             self.stateFeedback()
             self.pvapre_ = self.pvacur_
             self.insPropagation(imupre_, imucur_)
-        elif res == 2:
+        elif res_G == 2:
             ## GNSS数据靠近当前历元，先对当前IMU进行状态传播
             self.insPropagation(imupre_, imucur_)
             self.gnssUpdate(gnssdata_)
@@ -304,7 +306,7 @@ class GIEngine:
         ## GNSS更新之后设置为不可用
         self.gnssdata_.isvalid = False
           
-    def isToUpdate(self,imutime1:float,imutime2:float,updatetime_G:float) -> int:
+    def GisToUpdate(self,imutime1:float,imutime2:float,updatetime_G:float) -> int:
         if np.abs(imutime1 - updatetime_G) < GIEngine.TIME_ALIGN_ERR :
             ## 更新时间靠近imutime1
             return 1
@@ -312,6 +314,20 @@ class GIEngine:
             ## 更新时间靠近imutime2
             return 2
         elif imutime1 < updatetime_G and updatetime_G < imutime2 :
+            ## 更新时间在imutime1和imutime2之间, 但不靠近任何一个
+            return 3
+        else:
+            ## 更新时间不在imutimt1和imutime2之间，且不靠近任何一个
+            return 0
+        
+    def BisToUpdate(self,imutime1:float,imutime2:float,updatetime_B:float) -> int:
+        if np.abs(imutime1 - updatetime_B) < GIEngine.TIME_ALIGN_ERR :
+            ## 更新时间靠近imutime1
+            return 1
+        elif np.abs(imutime2 - updatetime_B) <= GIEngine.TIME_ALIGN_ERR :
+            ## 更新时间靠近imutime2
+            return 2
+        elif imutime1 < updatetime_B and updatetime_B < imutime2 :
             ## 更新时间在imutime1和imutime2之间, 但不靠近任何一个
             return 3
         else:
