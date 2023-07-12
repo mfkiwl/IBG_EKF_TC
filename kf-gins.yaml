@@ -94,4 +94,9 @@ corrtime: 1.0                    # [hr]
 
 # 天线杆臂, IMU坐标系前右下方向
 # antenna lever, forward, right and down in the imu frame. [m]
-antlever: [0.045, 0.46, -0.238]
+antlever_G: [0.045, 0.46, -0.238]
+antlever_B: [0.045, 0.46, -0.238]
+
+## BLE传播参数
+BLE_A: -44.0
+BLE_n: 1.52112433

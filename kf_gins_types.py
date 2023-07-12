@@ -62,4 +62,8 @@ class GINSOptions:
         ## RSSI噪声参数
         self.rssinoise = RSSINoise()
         ##  安装参数
-        self.antlever = np.zeros(3)
+        self.antlever_G = np.zeros(3)
+        self.antlever_B = np.zeros(3)
+        ## BLE传播参数
+        self.BLE_A = 0.0
+        self.BLE_n = 0.0

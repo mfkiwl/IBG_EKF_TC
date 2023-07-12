@@ -57,7 +57,12 @@ def LoadOptions():
     options.imunoise.corr_time *= 3600
 
     ## GNSS天线杆臂, GNSS天线相位中心在IMU坐标系下位置
-    options.antlever = np.array(config['antlever'])
+    options.antlever_G = np.array(config['antlever_G'])
+    options.antlever_B = np.array(config['antlever_B'])
+
+    ## BLE传播参数
+    options.BLE_A = config['BLE_A']
+    options.BLE_n = config['BLE_n']
     return options
 
 def imuload(data_,rate,pre_time):

@@ -191,8 +191,6 @@ class GIEngine:
         pvapre_ = self.pvapre_
         self.pvacur_ = INS.insMech(pvapre_, imupre, imucur)
         
-        
-        
         ## 系统噪声传播，姿态误差采用phi角误差模型
         ## 初始化Phi阵(状态转移矩阵)，F阵，Qd阵(传播噪声阵)，G阵(噪声驱动阵)
         # Phi = np.identity(self.Cov_.shape[0])
@@ -283,7 +281,6 @@ class GIEngine:
         
         Qd = (Phi @ Qd @ Phi.T + Qd) / 2
         
-        # print(Phi[3,7])
         ## EKF预测传播系统协方差和系统误差状态
         self.EKFPredict(Phi, Qd)
 
@@ -291,9 +288,33 @@ class GIEngine:
         ## IMU位置转到GNSS天线相位中心位置
         Dr_inv = Earth.DRi(self.pvacur_.pos)
         Dr = Earth.DR(self.pvacur_.pos)
-        antenna_pos = self.pvacur_.pos + Dr_inv @ self. pvacur_.att.cbn @ self.options_.antlever
+        antenna_pos = self.pvacur_.pos + Dr_inv @ self. pvacur_.att.cbn @ self.options_.antlever_G
         ## GNSS位置测量新息
         dz = Dr @ (antenna_pos - gnssdata.blh)
+        ## 构造GNSS位置观测矩阵
+        H_gnsspos = np.zeros((3, self.Cov_.shape[0]))
+        H_gnsspos[0:3,StateID.P_ID:StateID.P_ID+3] = np.identity(3)
+        H_gnsspos[0:3,StateID.PHI_ID:StateID.PHI_ID+3] = ro.skewSymmetric(self.pvacur_.att.cbn @ self.options_.antlever)
+        ## 位置观测噪声阵
+        R_gnsspos = np.diag(np.multiply(gnssdata.std, gnssdata.std))
+        ## EKF更新协方差和误差状态
+        dz = dz.reshape(3, 1)
+        self.EKFUpdate(dz, H_gnsspos, R_gnsspos)
+        ## GNSS更新之后设置为不可用
+        self.gnssdata_.isvalid = False
+    
+    def bleUpdate(self,bledata:ty.BLE):
+        ## IMU位置转到BLE天线相位中心位置
+        Dr_inv = Earth.DRi(self.pvacur_.pos)
+        Dr = Earth.DR(self.pvacur_.pos)
+        antenna_pos = self.pvacur_.pos + Dr_inv @ self. pvacur_.att.cbn @ self.options_.antlever_B
+        ## 距离测量新息
+        dz = []
+        for i in bledata.blh:
+            dI = np.linalg.norm(Dr @ (antenna_pos - i))
+            dB = (10**(self.options_.BLE_A - bledata.RSSI[i]))/(10*self.options_.BLE_n)
+            zk = dI - dB
+            dz.append(zk)
         ## 构造GNSS位置观测矩阵
         H_gnsspos = np.zeros((3, self.Cov_.shape[0]))
         H_gnsspos[0:3,StateID.P_ID:StateID.P_ID+3] = np.identity(3)
