@@ -12,11 +12,6 @@ class PVA:
         self.vel = np.zeros(3)
         self.att = Attitude()
 
-class RSSI:
-    def __init__(self):
-        self.AP = 0
-        self.RSSI = np.zeros(3)
-        self.blh = np.array([np.zeros(3)])
 
 class ImuError:
     def __init__(self):
@@ -31,7 +26,6 @@ class NavState:
         self.vel = np.zeros(3)
         self.euler = np.zeros(3)
         self.imuerror = ImuError()
-        self.rssi = RSSI()
         self.rssierror = RSSIError()
 
 class RSSIError:

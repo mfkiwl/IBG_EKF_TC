@@ -47,8 +47,7 @@ class GIEngine:
         self.pvacur_ = kf.PVA()
         self.pvapre_ = kf.PVA()
         self.imuerror_ = kf.ImuError()
-        ##  RSSI状态
-        self.rssicur_ = kf.RSSI()
+        ##  RSSI误差状态
         self.rssierro_  = kf.RSSIError()
         ## Kalman滤波相关
         self.Cov_ = np.zeros((GIEngine.RANK,GIEngine.RANK))
@@ -308,24 +307,31 @@ class GIEngine:
         Dr_inv = Earth.DRi(self.pvacur_.pos)
         Dr = Earth.DR(self.pvacur_.pos)
         antenna_pos = self.pvacur_.pos + Dr_inv @ self. pvacur_.att.cbn @ self.options_.antlever_B
-        ## 距离测量新息
-        dz = []
-        for i in bledata.blh:
-            dI = np.linalg.norm(Dr @ (antenna_pos - i))
+        ## 距离测量新息与H阵中的一部分Gm
+        dz = np.zeros(bledata.AP)
+        Gm = np.zeros(bledata.AP)
+        Bm = np.zeros(bledata.AP)
+        for i in range(bledata.AP):
+            dI = np.linalg.norm(Dr @ (antenna_pos - bledata.blh[i]))
             dB = (10**(self.options_.BLE_A - bledata.RSSI[i]))/(10*self.options_.BLE_n)
             zk = dI - dB
-            dz.append(zk)
-        ## 构造GNSS位置观测矩阵
-        H_gnsspos = np.zeros((3, self.Cov_.shape[0]))
-        H_gnsspos[0:3,StateID.P_ID:StateID.P_ID+3] = np.identity(3)
-        H_gnsspos[0:3,StateID.PHI_ID:StateID.PHI_ID+3] = ro.skewSymmetric(self.pvacur_.att.cbn @ self.options_.antlever)
+            dz[i] = zk
+            e = (1+np.log(10)*self.rssierro_.brss/10*self.options_.BLE_n)/dI * (antenna_pos - bledata.blh[i])
+            Gm[i] = e
+            Bm[i] = np.log(10)*dI/10*self.options_.BLE_n
+        Gm = Gm.reshape(bledata.AP,3)
+        Bm = Bm.reshape(3, 1)
+        ## BLE观测矩阵
+        H_gnsspos = np.zeros((bledata.AP, self.Cov_.shape[0]))
+        H_gnsspos[0:bledata.AP,StateID.P_ID:StateID.P_ID+3] = Gm
+        H_gnsspos[0:bledata.AP,StateID.BRSS_ID:StateID.BRSS_ID+1] = Bm
         ## 位置观测噪声阵
-        R_gnsspos = np.diag(np.multiply(gnssdata.std, gnssdata.std))
+        R_gnsspos = np.diag(np.multiply(self.options_.rssinoise.rss_std, self.options_.rssinoise.rss_std))
         ## EKF更新协方差和误差状态
         dz = dz.reshape(3, 1)
         self.EKFUpdate(dz, H_gnsspos, R_gnsspos)
-        ## GNSS更新之后设置为不可用
-        self.gnssdata_.isvalid = False
+        ## BLE更新之后设置为不可用
+        self.bledata_.isvalid = False
           
     def GisToUpdate(self,imutime1:float,imutime2:float,updatetime_G:float) -> int:
         if np.abs(imutime1 - updatetime_G) < GIEngine.TIME_ALIGN_ERR :
