@@ -293,7 +293,7 @@ class GIEngine:
         ## 构造GNSS位置观测矩阵
         H_gnsspos = np.zeros((3, self.Cov_.shape[0]))
         H_gnsspos[0:3,StateID.P_ID:StateID.P_ID+3] = np.identity(3)
-        H_gnsspos[0:3,StateID.PHI_ID:StateID.PHI_ID+3] = ro.skewSymmetric(self.pvacur_.att.cbn @ self.options_.antlever)
+        H_gnsspos[0:3,StateID.PHI_ID:StateID.PHI_ID+3] = ro.skewSymmetric(self.pvacur_.att.cbn @ self.options_.antlever_G)
         ## 位置观测噪声阵
         R_gnsspos = np.diag(np.multiply(gnssdata.std, gnssdata.std))
         ## EKF更新协方差和误差状态
@@ -320,19 +320,65 @@ class GIEngine:
             Gm[i] = e
             Bm[i] = np.log(10)*dI/10*self.options_.BLE_n
         Gm = Gm.reshape(bledata.AP,3)
-        Bm = Bm.reshape(3, 1)
+        Bm = Bm.reshape(bledata.AP, 1)
         ## BLE观测矩阵
-        H_gnsspos = np.zeros((bledata.AP, self.Cov_.shape[0]))
-        H_gnsspos[0:bledata.AP,StateID.P_ID:StateID.P_ID+3] = Gm
-        H_gnsspos[0:bledata.AP,StateID.BRSS_ID:StateID.BRSS_ID+1] = Bm
+        H_ble = np.zeros((bledata.AP, self.Cov_.shape[0]))
+        H_ble[0:bledata.AP,StateID.P_ID:StateID.P_ID+3] = Gm
+        H_ble[0:bledata.AP,StateID.BRSS_ID:StateID.BRSS_ID+1] = Bm
         ## 位置观测噪声阵
-        R_gnsspos = np.diag(np.multiply(self.options_.rssinoise.rss_std, self.options_.rssinoise.rss_std))
+        rss_std = np.full((bledata.AP,), self.options_.rssinoise.rss_std)
+        R_ble = np.diag(np.multiply(rss_std, rss_std))
         ## EKF更新协方差和误差状态
-        dz = dz.reshape(3, 1)
-        self.EKFUpdate(dz, H_gnsspos, R_gnsspos)
+        dz = dz.reshape(bledata.AP, 1)
+        self.EKFUpdate(dz, H_ble, R_ble)
         ## BLE更新之后设置为不可用
         self.bledata_.isvalid = False
-          
+
+    def ble_gnssUpdate(self,gnssdata:ty.GNSS,bledata:ty.BLE):
+        ## IMU位置转到BLE和GNSS天线相位中心位置
+        Dr_inv = Earth.DRi(self.pvacur_.pos)
+        Dr = Earth.DR(self.pvacur_.pos)
+        antenna_pos_G = self.pvacur_.pos + Dr_inv @ self. pvacur_.att.cbn @ self.options_.antlever_G
+        antenna_pos_B = self.pvacur_.pos + Dr_inv @ self. pvacur_.att.cbn @ self.options_.antlever_B
+        ## GNSS位置测量新息
+        dz_G = Dr @ (antenna_pos_G - gnssdata.blh)
+        ## 距离测量新息与H阵中的一部分Gm
+        dz_B = np.zeros(bledata.AP)
+        Gm = np.zeros(bledata.AP)
+        Bm = np.zeros(bledata.AP)
+        for i in range(bledata.AP):
+            dI = np.linalg.norm(Dr @ (antenna_pos_B - bledata.blh[i]))
+            dB = (10**(self.options_.BLE_A - bledata.RSSI[i]))/(10*self.options_.BLE_n)
+            zk = dI - dB
+            dz_B[i] = zk
+            e = (1+np.log(10)*self.rssierro_.brss/10*self.options_.BLE_n)/dI * (antenna_pos_B - bledata.blh[i])
+            Gm[i] = e
+            Bm[i] = np.log(10)*dI/10*self.options_.BLE_n
+        Gm = Gm.reshape(bledata.AP,3)
+        Bm = Bm.reshape(3, 1)
+        ##两个新息合二为一
+        dz = np.concatenate(dz_B,dz_G)
+        ## 构造GNSS位置观测矩阵
+        H_gnsspos = np.zeros((3, self.Cov_.shape[0]))
+        H_gnsspos[0:3,StateID.P_ID:StateID.P_ID+3] = np.identity(3)
+        H_gnsspos[0:3,StateID.PHI_ID:StateID.PHI_ID+3] = ro.skewSymmetric(self.pvacur_.att.cbn @ self.options_.antlever_G)
+        ## 构造BLE观测矩阵
+        H_ble = np.zeros((bledata.AP, self.Cov_.shape[0]))
+        H_ble[0:bledata.AP,StateID.P_ID:StateID.P_ID+3] = Gm
+        H_ble[0:bledata.AP,StateID.BRSS_ID:StateID.BRSS_ID+1] = Bm
+        ## 两个观测矩阵合二为一
+        H = np.vstack(H_ble,H_gnsspos)
+        ## 观测噪声阵
+        rss_std = np.full((bledata.AP,), self.options_.rssinoise.rss_std)
+        R = np.diag(np.concatenate(np.multiply(rss_std, rss_std),np.multiply(gnssdata.std, gnssdata.std)))
+        ## EKF更新协方差和误差状态
+        dz = dz.reshape(bledata.AP+3, 1)
+        self.EKFUpdate(dz, H, R)
+        ## BLE和GNSS更新之后设置为不可用
+        self.gnssdata_.isvalid = False
+        self.bledata_.isvalid = False
+
+
     def GisToUpdate(self,imutime1:float,imutime2:float,updatetime_G:float) -> int:
         if np.abs(imutime1 - updatetime_G) < GIEngine.TIME_ALIGN_ERR :
             ## 更新时间靠近imutime1
@@ -414,6 +460,9 @@ class GIEngine:
         self.imuerror_.gyrscale += vectemp
         vectemp = np.concatenate(self.dx_[StateID.SA_ID:StateID.SA_ID+3,0:1])
         self.imuerror_.accscale += vectemp
+        ## RSSI误差反馈
+        vectemp = self.dx_[StateID.BRSS_ID,0]
+        self.rssierro_.brss += vectemp
         ## 误差状态反馈到系统状态后,将误差状态清零
         self.dx_[:, :] = 0
 
