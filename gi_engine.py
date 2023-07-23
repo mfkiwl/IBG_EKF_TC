@@ -82,8 +82,7 @@ class GIEngine:
         self.pvacur_.att.qbn = ro.euler2quaternion( np.flip(initstate.euler, axis=0))
         # 初始化IMU误差
         self.imuerror_ = initstate.imuerror
-        # 初始化RSSI
-        self.rssicur_ = initstate.rssi
+        # 初始化RSSI误差
         self.rssierro_ = initstate.rssierror
         # 给上一时刻状态赋同样的初值
         p = self.pvacur_
@@ -126,37 +125,69 @@ class GIEngine:
         imupre_ = self.imupre_
         imucur_ = self.imucur_
         gnssdata_ = self.gnssdata_
+        bledata_ = self.bledata_
         
         res_G = self.GisToUpdate(imupre_.time, imucur_.time, updatetime_G)
         ## 判断是否要进行BLE更新
         res_B = self.BisToUpdate(imupre_.time, imucur_.time, updatetime_B)
     
-        if res_G == 0:
+        if res_B ==0:
+            if res_G == 0:
             ## 只传播导航状态
-            self.insPropagation(imupre_, imucur_)
-        elif res_G == 1:
-            ## GNSS数据靠近上一历元，先对上一历元进行GNSS更新
-            self.gnssUpdate(gnssdata_)
-            self.stateFeedback()
-            self.pvapre_ = self.pvacur_
-            self.insPropagation(imupre_, imucur_)
-        elif res_G == 2:
-            ## GNSS数据靠近当前历元，先对当前IMU进行状态传播
-            self.insPropagation(imupre_, imucur_)
-            self.gnssUpdate(gnssdata_)
-            self.stateFeedback()
+                self.insPropagation(imupre_, imucur_)
+            elif res_G == 1:
+                ## GNSS数据靠近上一历元，先对上一历元进行GNSS更新
+                self.gnssUpdate(gnssdata_)
+                self.stateFeedback()
+                self.pvapre_ = self.pvacur_
+                self.insPropagation(imupre_, imucur_)
+            elif res_G == 2:
+                ## GNSS数据靠近当前历元，先对当前IMU进行状态传播
+                self.insPropagation(imupre_, imucur_)
+                self.gnssUpdate(gnssdata_)
+                self.stateFeedback()
+            else:
+                ## GNSS数据在两个IMU数据之间(不靠近任何一个), 将当前IMU内插到整秒时刻
+                midimu = ty.IMU
+                imucur_, midimu = GIEngine.imuInterpolate(imupre_, imucur_, updatetime_G, midimu)
+                ## 对前一半IMU进行状态传播
+                self.insPropagation(imupre_, midimu)
+                ## 整秒时刻进行GNSS更新，并反馈系统状态
+                self.gnssUpdate(gnssdata_)
+                self.stateFeedback()
+                ## 对后一半IMU进行状态传播
+                self.pvapre_ = self.pvacur_
+                self.insPropagation(midimu, imucur_)
         else:
-            ## GNSS数据在两个IMU数据之间(不靠近任何一个), 将当前IMU内插到整秒时刻
-            midimu = ty.IMU
-            imucur_, midimu = GIEngine.imuInterpolate(imupre_, imucur_, updatetime_G, midimu)
-            ## 对前一半IMU进行状态传播
-            self.insPropagation(imupre_, midimu)
-            ## 整秒时刻进行GNSS更新，并反馈系统状态
-            self.gnssUpdate(gnssdata_)
-            self.stateFeedback()
-            ## 对后一半IMU进行状态传播
-            self.pvapre_ = self.pvacur_
-            self.insPropagation(midimu, imucur_)
+            if res_G == 0:
+                ## 
+                self.bleUpdate(bledata_)
+                self.stateFeedback()
+                self.pvapre_ = self.pvacur_
+                self.insPropagation(imupre_, imucur_)
+            elif res_G == 1:
+                ## GNSS数据靠近上一历元，先对上一历元进行GNSS更新
+                self.ble_gnssUpdate(gnssdata_,bledata_)
+                self.stateFeedback()
+                self.pvapre_ = self.pvacur_
+                self.insPropagation(imupre_, imucur_)
+            elif res_G == 2:
+                ## GNSS数据靠近当前历元，先对当前IMU进行状态传播
+                self.insPropagation(imupre_, imucur_)
+                self.ble_gnssUpdate(gnssdata_,bledata_)
+                self.stateFeedback()
+            else:
+                ## GNSS数据在两个IMU数据之间(不靠近任何一个), 将当前IMU内插到整秒时刻
+                midimu = ty.IMU
+                imucur_, midimu = GIEngine.imuInterpolate(imupre_, imucur_, updatetime_G, midimu)
+                ## 对前一半IMU进行状态传播
+                self.insPropagation(imupre_, midimu)
+                ## 整秒时刻进行GNSS更新，并反馈系统状态
+                self.ble_gnssUpdate(gnssdata_,bledata_)
+                self.stateFeedback()
+                ## 对后一半IMU进行状态传播
+                self.pvapre_ = self.pvacur_
+                self.insPropagation(midimu, imucur_)
 
         ## 检查协方差矩阵对角线元素
         self.checkCov()
@@ -195,9 +226,9 @@ class GIEngine:
         # Phi = np.identity(self.Cov_.shape[0])
         # F = np.zeros_like(self.Cov_)
         # Qd = np.zeros_like(self.Cov_)
-        Phi = np.identity(21)
-        F = np.zeros((21,21))
-        Qd = np.zeros((21,21))
+        Phi = np.identity(22)
+        F = np.zeros((22,22))
+        Qd = np.zeros((22,22))
         G = np.zeros((GIEngine.RANK, GIEngine.NOISERANK))
         ## 使用上一历元状态计算状态转移矩阵
         rmrn = Earth.meridianPrimeVerticalRadius(pvapre_.pos[0])
@@ -265,6 +296,9 @@ class GIEngine:
         F[StateID.SG_ID:StateID.SG_ID+3,StateID.SG_ID:StateID.SG_ID+3] = -1 / self.options_.imunoise.corr_time * np.identity(3)
         F[StateID.SA_ID:StateID.SA_ID+3,StateID.SA_ID:StateID.SA_ID+3] = -1 / self.options_.imunoise.corr_time * np.identity(3)
 
+        ## RSSI误差
+        F[StateID.BRSS_ID,StateID.BRSS_ID] = 0.0
+
         ## 系统噪声驱动矩阵
         G[StateID.V_ID:StateID.V_ID+3,NoiseID.VRW_ID:NoiseID.VRW_ID+3] =  pvapre_.att.cbn
         G[StateID.PHI_ID:StateID.PHI_ID+3,NoiseID.ARW_ID:NoiseID.ARW_ID+3] =  pvapre_.att.cbn
@@ -272,6 +306,7 @@ class GIEngine:
         G[StateID.BA_ID:StateID.BA_ID+3,NoiseID.BASTD_ID:NoiseID.BASTD_ID+3] = np.identity(3)
         G[StateID.SG_ID:StateID.SG_ID+3,NoiseID.SGSTD_ID:NoiseID.SGSTD_ID+3] = np.identity(3)
         G[StateID.SA_ID:StateID.SA_ID+3,NoiseID.SASTD_ID:NoiseID.SASTD_ID+3] = np.identity(3)
+        G[StateID.BRSS_ID,NoiseID.BRSTD_ID] = 1.0
 
         ## 状态转移矩阵
         Phi = Phi + F * imucur.dt
@@ -307,13 +342,15 @@ class GIEngine:
         Dr_inv = Earth.DRi(self.pvacur_.pos)
         Dr = Earth.DR(self.pvacur_.pos)
         antenna_pos = self.pvacur_.pos + Dr_inv @ self. pvacur_.att.cbn @ self.options_.antlever_B
+        ## RSSI误差补偿
+        bledata.RSSI -= self.rssierro_.brss
         ## 距离测量新息与H阵中的一部分Gm
         dz = np.zeros(bledata.AP)
-        Gm = np.zeros(bledata.AP)
+        Gm = np.zeros((bledata.AP,3))
         Bm = np.zeros(bledata.AP)
         for i in range(bledata.AP):
             dI = np.linalg.norm(Dr @ (antenna_pos - bledata.blh[i]))
-            dB = (10**(self.options_.BLE_A - bledata.RSSI[i]))/(10*self.options_.BLE_n)
+            dB = 10**((self.options_.BLE_A - bledata.RSSI[i])/(10*self.options_.BLE_n))
             zk = dI - dB
             dz[i] = zk
             e = (1+np.log(10)*self.rssierro_.brss/10*self.options_.BLE_n)/dI * (antenna_pos - bledata.blh[i])
@@ -340,24 +377,26 @@ class GIEngine:
         Dr = Earth.DR(self.pvacur_.pos)
         antenna_pos_G = self.pvacur_.pos + Dr_inv @ self. pvacur_.att.cbn @ self.options_.antlever_G
         antenna_pos_B = self.pvacur_.pos + Dr_inv @ self. pvacur_.att.cbn @ self.options_.antlever_B
+        ## RSSI误差补偿
+        bledata.RSSI -= self.rssierro_.brss
         ## GNSS位置测量新息
         dz_G = Dr @ (antenna_pos_G - gnssdata.blh)
         ## 距离测量新息与H阵中的一部分Gm
         dz_B = np.zeros(bledata.AP)
-        Gm = np.zeros(bledata.AP)
+        Gm = np.zeros((bledata.AP,3))
         Bm = np.zeros(bledata.AP)
         for i in range(bledata.AP):
             dI = np.linalg.norm(Dr @ (antenna_pos_B - bledata.blh[i]))
-            dB = (10**(self.options_.BLE_A - bledata.RSSI[i]))/(10*self.options_.BLE_n)
+            dB = 10**((self.options_.BLE_A - bledata.RSSI[i])/(10*self.options_.BLE_n))
             zk = dI - dB
             dz_B[i] = zk
             e = (1+np.log(10)*self.rssierro_.brss/10*self.options_.BLE_n)/dI * (antenna_pos_B - bledata.blh[i])
             Gm[i] = e
             Bm[i] = np.log(10)*dI/10*self.options_.BLE_n
         Gm = Gm.reshape(bledata.AP,3)
-        Bm = Bm.reshape(3, 1)
+        Bm = Bm.reshape(bledata.AP, 1)
         ##两个新息合二为一
-        dz = np.concatenate(dz_B,dz_G)
+        dz = np.concatenate((dz_B,dz_G),axis=0)
         ## 构造GNSS位置观测矩阵
         H_gnsspos = np.zeros((3, self.Cov_.shape[0]))
         H_gnsspos[0:3,StateID.P_ID:StateID.P_ID+3] = np.identity(3)
@@ -367,10 +406,10 @@ class GIEngine:
         H_ble[0:bledata.AP,StateID.P_ID:StateID.P_ID+3] = Gm
         H_ble[0:bledata.AP,StateID.BRSS_ID:StateID.BRSS_ID+1] = Bm
         ## 两个观测矩阵合二为一
-        H = np.vstack(H_ble,H_gnsspos)
+        H = np.vstack((H_ble,H_gnsspos))
         ## 观测噪声阵
         rss_std = np.full((bledata.AP,), self.options_.rssinoise.rss_std)
-        R = np.diag(np.concatenate(np.multiply(rss_std, rss_std),np.multiply(gnssdata.std, gnssdata.std)))
+        R = np.diag(np.concatenate((np.multiply(rss_std, rss_std),np.multiply(gnssdata.std, gnssdata.std))))
         ## EKF更新协方差和误差状态
         dz = dz.reshape(bledata.AP+3, 1)
         self.EKFUpdate(dz, H, R)

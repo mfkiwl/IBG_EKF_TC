@@ -7,12 +7,12 @@
 # imudata and gnssdata filepath
 imupath: 'E:\BaiduSyncdisk\数据\测试集\IMU测试集.csv'
 gnsspath: 'E:\BaiduSyncdisk\数据\测试集\GNSS测试集.csv'
-blepath: 'E:\BaiduSyncdisk\数据\测试集\RSSI仿真数据.csv'
+blepath: 'E:\BaiduSyncdisk\数据\测试集\RSSI仿真数据_无室外.csv'
 
 # 输出文件夹路径
 # output folder path
-outputpath_nav: 'C:\Users\69589\Desktop\WSN+IMU定位\测试定位结果.csv'
-outputpath_error: 'C:\Users\69589\Desktop\WSN+IMU定位\测试误差结果.csv'
+outputpath_nav: 'C:\Users\Administrator\Desktop\WSN+IMU定位\测试定位结果.csv'
+outputpath_error: 'C:\Users\Administrator\Desktop\WSN+IMU定位\测试误差结果.csv'
 
 # IMU文件列数 (只会用前7列IMU数据)
 # IMU data columns, only use the first seven columns

@@ -92,10 +92,9 @@ def bleload(data_):
     ble_ = ty.BLE()
     ble_.time = data_['t']
     ble_.AP = len(data_['rssi'])
-    ble_.RSSI = np.array(data_['rssi'])
+    ble_.RSSI = np.array(data_['rssi']).astype(float)
     ble_.blh = np.array(data_['coord'])
-    ble_.blh[:][0] *= Angle.D2R
-    ble_.blh[:][1] *= Angle.D2R
+    ble_.blh[:,0:2] *= Angle.D2R
     return(ble_)
 
 def align(imu_data,gnss_data,ble_data,starttime):
@@ -125,6 +124,7 @@ def align(imu_data,gnss_data,ble_data,starttime):
 
 ## 初始化
 nav_result = np.empty((0, 10))
+error_result = np.empty((0, 14))
 options = LoadOptions()
 giengine = gi.GIEngine()
 giengine.GIFunction(options)
@@ -159,11 +159,11 @@ for row in imu_data[is_index+1:]:
         gnss = gnssload(gnss_data[gs_index])
         gs_index += 1
         giengine.addGnssData(gnss)
-
-    if ble.time < imu_cur.time and ble_data[bs_index+1]['t'] < endtime:
-        ble = bleload(ble_data.iloc[bs_index])
-        bs_index += 1
-        giengine.addBleData(ble)
+    if bs_index<ble_data.shape[0]:
+        if ble.time < imu_cur.time and ble_data['t'][bs_index] < endtime:
+            ble = bleload(ble_data.iloc[bs_index])
+            bs_index += 1
+            giengine.addBleData(ble)
 
 
     imu_cur,pre_time = imuload(row,imudatarate,pre_time)
