@@ -1,18 +1,14 @@
-# KF-GINS configuration file
-
-# Windows下使用KF-GINS时，文件路径中不能有中文
-# When you run KF-GINS under Windows, there should be NO Chinese in the file path.
 
 # IMU和GNSS数据文件路径
 # imudata and gnssdata filepath
 imupath: 'E:\BaiduSyncdisk\数据\测试集\IMU测试集.csv'
-gnsspath: 'E:\BaiduSyncdisk\数据\测试集\GNSS测试集.csv'
+gnsspath: 'E:\BaiduSyncdisk\数据\测试集\GNSS测试集_无室内.csv'
 blepath: 'E:\BaiduSyncdisk\数据\测试集\RSSI仿真数据_无室外.csv'
 
 # 输出文件夹路径
 # output folder path
-outputpath_nav: 'C:\Users\Administrator\Desktop\WSN+IMU定位\测试定位结果.csv'
-outputpath_error: 'C:\Users\Administrator\Desktop\WSN+IMU定位\测试误差结果.csv'
+outputpath_nav: '.\dataset\测试定位结果.csv'
+outputpath_error: '.\dataset\测试误差结果.csv'
 
 # IMU文件列数 (只会用前7列IMU数据)
 # IMU data columns, only use the first seven columns
@@ -26,6 +22,7 @@ imudatarate: 200
 # process until the imufile end if set endtime to -1
 starttime: 357485
 endtime: -1
+
 # 初始状态
 # initial state
 # 初始位置, 纬度 经度 高程
@@ -61,15 +58,6 @@ initvelstd: [ 0.003, 0.004, 0.004 ]
 # initial attitude std, roll, pitch and yaw std. [deg, deg, deg]
 initattstd: [ 0.003, 0.003, 0.023 ]
 
-# 初始IMU零偏和比例因子标准差, IMU的三个轴
-# initial IMU bias and scale error std, thrss axes of the imu
-# 如果不指定，默认按照IMU零偏和比例因子误差参数设定
-# default to the noise parameters of IMU bias and scale error.
-#initbgstd: [ 1, 1, 1 ]          # [deg/h]
-#initbastd: [ 50, 50, 50 ]       # [mGal]
-#initsgstd: [ 300, 300, 300 ]    # [ppm]
-#initsastd: [ 300, 300, 300 ]    # [ppm]
-
 # IMU噪声建模参数, IMU的三个轴
 # IMU noise parameters
 # 数据集的IMU
@@ -82,7 +70,7 @@ asstd: [300.0, 300.0, 300.0]  # [ppm]
 rsstd: 3.0                      #dBm
 corrtime: 1.0                    # [hr]
 
-#自己的IMU
+# 自己的IMU
 # arw: [0.3, 0.3, 0.3]         # [deg/sqrt(hr)]
 # vrw: [0.04, 0.04, 0.04]        # [m/s/sqrt(hr)]
 # gbstd: [15.0, 15.0, 15.0]       # [deg/hr]

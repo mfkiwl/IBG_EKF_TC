@@ -7,11 +7,6 @@ import types_my as ty
 import sys
 import yaml
 
-with open('kf-gins.yaml', 'r',encoding='utf-8') as file:
-        config = yaml.safe_load(file)
-        
-
-
 def LoadOptions():
     ## 读取初始位置(纬度 经度 高程)、(北向速度 东向速度 垂向速度)、姿态(欧拉角，ZYX旋转顺序, 横滚角、俯仰角、航向角)
     options = ky.GINSOptions()
@@ -122,6 +117,10 @@ def align(imu_data,gnss_data,ble_data,starttime):
 
     return imu_cur,gnss,ble,imu_index,gnss_index,ble_index,p_t
 
+## 数据读取
+with open('kf-gins.yaml', 'r',encoding='utf-8') as file:
+        config = yaml.safe_load(file)
+
 ## 初始化
 nav_result = np.empty((0, 10))
 error_result = np.empty((0, 14))
@@ -133,7 +132,6 @@ starttime = config['starttime']
 endtime = config['endtime']
 pre_time = starttime
 
-
 ## 读取数据
 imu_data = np.genfromtxt(config['imupath'],delimiter=',')
 gnss_data = np.genfromtxt(config['gnsspath'],delimiter=',')
@@ -142,10 +140,11 @@ ble_data['rssi'] = ble_data['rssi'].apply(lambda x: eval(x))
 ble_data['coord'] = ble_data['coord'].apply(lambda x: eval(x))
 ble_data['id'] = ble_data['id'].apply(lambda x: eval(x))
 
-
+## 停止时间为-1时设置停止时间为数据集的最后一个时间
 if endtime < 0 :
-    endtime = gnss_data[-1, 0]
+    endtime = imu_data[-1, 0]
 
+## 初始数据对齐
 imu_cur,gnss,ble,is_index,gs_index,bs_index,pre_time = align(imu_data,gnss_data,ble_data,starttime)
 
 ## 初始数据载入
@@ -153,27 +152,27 @@ giengine.addImuData(imu_cur, True)
 giengine.addGnssData(gnss)
 giengine.addBleData(ble)
 
+## 循环处理数据进行定位
 for row in imu_data[is_index+1:]:
-
-    if gnss.time < imu_cur.time and gnss.time+1!= endtime:
+    ## GNSS数据载入
+    if gnss.time < imu_cur.time and gnss.time+1 <= endtime:
         gnss = gnssload(gnss_data[gs_index])
         gs_index += 1
         giengine.addGnssData(gnss)
+    ## BLE数据载入
     if bs_index<ble_data.shape[0]:
         if ble.time < imu_cur.time and ble_data['t'][bs_index] < endtime:
             ble = bleload(ble_data.iloc[bs_index])
             bs_index += 1
             giengine.addBleData(ble)
-
-
+    ## IMU数据载入
     imu_cur,pre_time = imuload(row,imudatarate,pre_time)
-
     if imu_cur.time > endtime:
         break
     giengine.addImuData(imu_cur)
-
+    ## 处理开始
     giengine.newImuProcess()
-
+    ## 数据输出
     timestamp = giengine.timestamp()
     navstate  = giengine.getNavState()
     imuerr = navstate.imuerror
@@ -183,10 +182,10 @@ for row in imu_data[is_index+1:]:
     result2 = np.array([np.round(timestamp,9),np.round(imuerr.gyrbias[0]* Angle.R2D*3600,9),np.round(imuerr.gyrbias[1]* Angle.R2D*3600,9),  np.round(imuerr.gyrbias[2]* Angle.R2D*3600,9),np.round(imuerr.accbias[0]* 1e5,9), np.round(imuerr.accbias[1]* 1e5,9), np.round(imuerr.accbias[2]* 1e5,9),np.round(imuerr.gyrscale[0] * 1e6,9),np.round(imuerr.gyrscale[1] * 1e6,9),np.round(imuerr.gyrscale[2] * 1e6,9),np.round(imuerr.accscale[0] * 1e6,9),np.round(imuerr.accscale[1] * 1e6,9),np.round(imuerr.accscale[2] * 1e6,9),np.round(rssierr.brss,1)])
     nav_result = np.vstack((nav_result, result1))
     error_result = np.vstack((error_result, result2))
-
     sys.stdout.write('\r' + str(timestamp))
     sys.stdout.flush()
 
+## 保存数据
 np.savetxt(config['outputpath_nav'], nav_result, delimiter=",",fmt="%6f")    
 np.savetxt(config['outputpath_error'], error_result, delimiter=",",fmt="%6f") 
 

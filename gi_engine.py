@@ -447,12 +447,10 @@ class GIEngine:
             return 0
         
     def EKFPredict(self,Phi,Qd):
-        # assert Phi.shape[0] == self.Cov_.shape[0]
-        # assert Qd.shape[0] == self.Cov_.shape[0]
-
+        assert Phi.shape[0] == self.Cov_.shape[0]
+        assert Qd.shape[0] == self.Cov_.shape[0]
         
         ## 传播系统协方差和误差状态
-       
         self.Cov_ = Phi @ self.Cov_ @ Phi.transpose() + Qd
         self.dx_  = Phi @ self.dx_
         
@@ -461,7 +459,7 @@ class GIEngine:
         assert  H.shape[1] == self.Cov_.shape[0]
         assert  dz.shape[0] == H.shape[0]
         assert  dz.shape[0] == R.shape[0]
-        # assert  dz.shape[1] == 1
+        assert  dz.shape[1] == 1
 
         ## 计算Kalman增益
         temp =  H @ self.Cov_ @ H.transpose() + R
