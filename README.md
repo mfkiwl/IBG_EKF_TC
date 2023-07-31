@@ -29,5 +29,17 @@ https://github.com/i2Nav-WHU/awesome-gins-datasets
 
 在dataset文件夹中有数据文件示例
 
-### 所需第三方库
+### 算法详解
+INS + GNSS 松组合算法详解参考KF-GINS项目
+
+INS+BLE紧组合定位参考下图：
+
+![image](https://github.com/Dennissy23/IBG_EKF_：/assets/87610323/73ad591b-3aa9-4e35-88a7-3cd1192cfc08)
+
+其中
+
+![image](https://github.com/Dennissy23/IBG_EKF_TC/assets/87610323/89890351-e5eb-4aaf-8911-23cb27241a47)
+
+![image](https://github.com/Dennissy23/IBG_EKF_TC/assets/87610323/7410591b-58a3-4d59-bed0-2d9f80d007e0)
+
 
