@@ -34,7 +34,8 @@ INS + GNSS 松组合算法详解参考KF-GINS项目
 
 INS+BLE紧组合定位参考下图：
 
-![image](https://github.com/Dennissy23/IBG_EKF_：/assets/87610323/73ad591b-3aa9-4e35-88a7-3cd1192cfc08)
+![image](https://github.com/Dennissy23/IBG_EKF_TC/assets/87610323/4e2171f7-89fb-4756-9e94-c0574f20347e)
+
 
 其中
 
