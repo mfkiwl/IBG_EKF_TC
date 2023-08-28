@@ -8,6 +8,7 @@ import numpy as np
 import os
 from scipy.spatial.transform import Rotation
 from mpmath import mp, matrix
+import csv
 
 class StateID(IntEnum):
     P_ID = 0
@@ -66,13 +67,13 @@ class GIEngine:
         self.Qc_[NoiseID.BASTD_ID:NoiseID.BASTD_ID+3, NoiseID.BASTD_ID:NoiseID.BASTD_ID+3] = 2/imunoise.corr_time * np.diag(np.square(imunoise.accbias_std))
         self.Qc_[NoiseID.SGSTD_ID:NoiseID.SGSTD_ID+3, NoiseID.SGSTD_ID:NoiseID.SGSTD_ID+3] = 2/imunoise.corr_time * np.diag(np.square(imunoise.gyrscale_std))
         self.Qc_[NoiseID.SASTD_ID:NoiseID.SASTD_ID+3, NoiseID.SASTD_ID:NoiseID.SASTD_ID+3] = 2/imunoise.corr_time * np.diag(np.square(imunoise.accscale_std))
+        # self.Qc_[NoiseID.BRSTD_ID, NoiseID.BRSTD_ID] = 2/imunoise.corr_time*np.square(rssinoise.rss_std)
         self.Qc_[NoiseID.BRSTD_ID, NoiseID.BRSTD_ID] = np.square(rssinoise.rss_std)
         ## 设置系统状态(位置、速度、姿态和IMU误差)初值和初始协方差
         initstate = self.options_.initstate
         initstate_std = self.options_.initstate_std
         self.initialize(initstate, initstate_std)
         
-
     def initialize(self,initstate:kf.NavState,initstate_std:kf.NavState):
         # 初始化位置、速度、姿态
         self.pvacur_.pos= initstate.pos
@@ -297,6 +298,7 @@ class GIEngine:
         F[StateID.SA_ID:StateID.SA_ID+3,StateID.SA_ID:StateID.SA_ID+3] = -1 / self.options_.imunoise.corr_time * np.identity(3)
 
         ## RSSI误差
+        # F[StateID.BRSS_ID,StateID.BRSS_ID] = -1 / self.options_.imunoise.corr_time
         F[StateID.BRSS_ID,StateID.BRSS_ID] = 0.0
 
         ## 系统噪声驱动矩阵
@@ -348,14 +350,21 @@ class GIEngine:
         dz = np.zeros(bledata.AP)
         Gm = np.zeros((bledata.AP,3))
         Bm = np.zeros(bledata.AP)
+        dI_list = np.zeros(bledata.AP)
+        dB_list = np.zeros(bledata.AP)
         for i in range(bledata.AP):
             dI = np.linalg.norm(Dr @ (antenna_pos - bledata.blh[i]))
             dB = 10**((self.options_.BLE_A - bledata.RSSI[i])/(10*self.options_.BLE_n))
             zk = dI - dB
             dz[i] = zk
-            e = (1+np.log(10)*self.rssierro_.brss/10*self.options_.BLE_n)/dI * (antenna_pos - bledata.blh[i])
+            dI_list[i] = dI
+            dB_list[i] = dB
+            e = (1+np.log(10)*self.rssierro_.brss/10*self.options_.BLE_n)/dI * (Dr @ (antenna_pos - bledata.blh[i]))  
             Gm[i] = e
             Bm[i] = np.log(10)*dI/10*self.options_.BLE_n
+        output = np.concatenate((dI_list,dB_list))
+        output = np.insert(output,0,np.round(self.timestamp_,9))
+        self.append_to_csv('.\dataset\距离_GNSS+IMU+BLE_std3_0828.csv',output)
         Gm = Gm.reshape(bledata.AP,3)
         Bm = Bm.reshape(bledata.AP, 1)
         ## BLE观测矩阵
@@ -363,11 +372,11 @@ class GIEngine:
         H_ble[0:bledata.AP,StateID.P_ID:StateID.P_ID+3] = Gm
         H_ble[0:bledata.AP,StateID.BRSS_ID:StateID.BRSS_ID+1] = Bm
         ## 位置观测噪声阵
-        rss_std = np.full((bledata.AP,), self.options_.rssinoise.rss_std)
-        R_ble = np.diag(np.multiply(rss_std, rss_std))
+        d_std = np.full((bledata.AP,), self.options_.rssinoise.rss_std+1)
+        R_d = np.diag(np.multiply(d_std, d_std))
         ## EKF更新协方差和误差状态
         dz = dz.reshape(bledata.AP, 1)
-        self.EKFUpdate(dz, H_ble, R_ble)
+        self.EKFUpdate(dz, H_ble, R_d)
         ## BLE更新之后设置为不可用
         self.bledata_.isvalid = False
 
@@ -390,7 +399,7 @@ class GIEngine:
             dB = 10**((self.options_.BLE_A - bledata.RSSI[i])/(10*self.options_.BLE_n))
             zk = dI - dB
             dz_B[i] = zk
-            e = (1+np.log(10)*self.rssierro_.brss/10*self.options_.BLE_n)/dI * (antenna_pos_B - bledata.blh[i])
+            e = (1+np.log(10)*self.rssierro_.brss/10*self.options_.BLE_n)/dI * (Dr @ (antenna_pos_B - bledata.blh[i]))
             Gm[i] = e
             Bm[i] = np.log(10)*dI/10*self.options_.BLE_n
         Gm = Gm.reshape(bledata.AP,3)
@@ -408,15 +417,14 @@ class GIEngine:
         ## 两个观测矩阵合二为一
         H = np.vstack((H_ble,H_gnsspos))
         ## 观测噪声阵
-        rss_std = np.full((bledata.AP,), self.options_.rssinoise.rss_std)
-        R = np.diag(np.concatenate((np.multiply(rss_std, rss_std),np.multiply(gnssdata.std, gnssdata.std))))
+        d_std = np.full((bledata.AP,), self.options_.rssinoise.rss_std+1)
+        R = np.diag(np.concatenate((np.multiply(d_std, d_std),np.multiply(gnssdata.std, gnssdata.std))))
         ## EKF更新协方差和误差状态
         dz = dz.reshape(bledata.AP+3, 1)
         self.EKFUpdate(dz, H, R)
         ## BLE和GNSS更新之后设置为不可用
         self.gnssdata_.isvalid = False
         self.bledata_.isvalid = False
-
 
     def GisToUpdate(self,imutime1:float,imutime2:float,updatetime_G:float) -> int:
         if np.abs(imutime1 - updatetime_G) < GIEngine.TIME_ALIGN_ERR :
@@ -454,7 +462,6 @@ class GIEngine:
         self.Cov_ = Phi @ self.Cov_ @ Phi.transpose() + Qd
         self.dx_  = Phi @ self.dx_
         
-
     def EKFUpdate(self,dz:np.ndarray,H:np.ndarray,R:np.ndarray):
         assert  H.shape[1] == self.Cov_.shape[0]
         assert  dz.shape[0] == H.shape[0]
@@ -470,6 +477,11 @@ class GIEngine:
         I = I - K @ H
         ## 如果每次更新后都进行状态反馈，则更新前dx_一直为0，下式可以简化为：dx_ = K * dz
         self.dx_  = self.dx_ + K @ (dz - H @ self.dx_)
+        dx_output = self.dx_.ravel()
+        dz_output = dz.ravel()
+        output = np.concatenate((dx_output,dz_output))
+        output = np.insert(output,0,np.round(self.timestamp_,9))
+        self.append_to_csv('.\dataset\状态向量与观测向量_std3_0828.csv',output)
         self.Cov_ = I @ self.Cov_ @ I.transpose() + K @ R @ K.transpose()
 
     def stateFeedback(self):
@@ -499,7 +511,7 @@ class GIEngine:
         self.imuerror_.accscale += vectemp
         ## RSSI误差反馈
         vectemp = self.dx_[StateID.BRSS_ID,0]
-        self.rssierro_.brss += vectemp
+        self.rssierro_.brss = vectemp
         ## 误差状态反馈到系统状态后,将误差状态清零
         self.dx_[:, :] = 0
 
@@ -546,3 +558,10 @@ class GIEngine:
     
     def getCovariance(self) -> np.ndarray:
         return self.Cov_
+    
+    @staticmethod
+    def append_to_csv(filename, rows):
+    # 打开文件并准备写入数据
+        with open(filename, 'a', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow(rows)

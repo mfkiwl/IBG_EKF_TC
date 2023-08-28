@@ -2,13 +2,14 @@
 # IMU和GNSS数据文件路径
 # imudata and gnssdata filepath
 imupath: 'E:\BaiduSyncdisk\数据\测试集\IMU测试集.csv'
-gnsspath: 'E:\BaiduSyncdisk\数据\测试集\GNSS测试集_无室内.csv'
-blepath: 'E:\BaiduSyncdisk\数据\测试集\RSSI仿真数据_无室外.csv'
+gnsspath: 'E:\BaiduSyncdisk\数据\测试集\GNSS测试集_无室内0824.csv'
+blepath: 'E:\BaiduSyncdisk\数据\测试集\RSSI仿真数据_std3_无室外0824.csv'
 
 # 输出文件夹路径
 # output folder path
-outputpath_nav: '.\dataset\测试定位结果.csv'
-outputpath_error: '.\dataset\测试误差结果.csv'
+outputpath_nav: '.\dataset\测试定位结果_std3_0828.csv'
+outputpath_error: '.\dataset\测试误差结果_std3_0828.csv'
+outputpath_std: '.\dataset\测试标准差结果_std3_0828.csv'
 
 # IMU文件列数 (只会用前7列IMU数据)
 # IMU data columns, only use the first seven columns
@@ -64,10 +65,10 @@ initattstd: [ 0.003, 0.003, 0.023 ]
 arw: [0.2, 0.2, 0.2]         # [deg/sqrt(hr)]
 vrw: [0.1, 0.1, 0.1]        # [m/s/sqrt(hr)]
 gbstd: [20.0, 20.0, 20.0]       # [deg/hr]
-abstd: [100.0, 100.0, 100.0]    # [mGal]
+abstd: [300.0, 300.0, 300.0]    # [mGal]
 gsstd: [550.0, 550.0, 550.0]  # [ppm]
 asstd: [300.0, 300.0, 300.0]  # [ppm]
-rsstd: 3.0                      #dBm
+rsstd: 1                     #dBm
 corrtime: 1.0                    # [hr]
 
 # 自己的IMU
