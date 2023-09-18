@@ -58,6 +58,10 @@ def LoadOptions():
     ## BLE传播参数
     options.BLE_A = config['BLE_A']
     options.BLE_n = config['BLE_n']
+
+    ## 滤波算法
+    options.filter = config['filter']
+    
     return options
 
 def imuload(data_,rate,pre_time):

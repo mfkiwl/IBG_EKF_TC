@@ -48,6 +48,8 @@ class RSSINoise:
 
 class GINSOptions:
     def __init__(self):
+        ##  滤波算法
+        self.filter = ''
         ##  初始状态和状态标准差
         self.initstate = NavState()
         self.initstate_std = NavState()
