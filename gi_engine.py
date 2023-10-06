@@ -1,5 +1,6 @@
 import types_my as ty
 import kf_gins_types as kf
+from angle import Angle
 from rotation import Rotation_my as ro
 from insmech import INSMech as INS
 from earth import Earth
@@ -7,8 +8,7 @@ from enum import IntEnum
 import numpy as np 
 import os
 from scipy.spatial.transform import Rotation
-from mpmath import mp, matrix
-import csv
+
 
 class StateID(IntEnum):
     P_ID = 0
@@ -56,6 +56,8 @@ class GIEngine:
         self.Qc_ = np.zeros((GIEngine.NOISERANK,GIEngine.NOISERANK))
         self.dx_ = np.zeros((GIEngine.RANK,1))
         self.transformed_deviation = np.zeros((GIEngine.RANK, 2*GIEngine.RANK+1))
+        ## NHC相关
+        self.NHC_data = kf.NHCData()
     
     def GIFunction(self,options:kf.GINSOptions):
         self.options_ = options
@@ -75,6 +77,8 @@ class GIEngine:
         initstate = self.options_.initstate
         initstate_std = self.options_.initstate_std
         self.initialize(initstate, initstate_std)
+        ##设置NHC初始时间
+        self.NHC_data.time = self.options_.starttime
         
     def initialize(self,initstate:kf.NavState,initstate_std:kf.NavState):
         # 初始化位置、速度、姿态
@@ -93,7 +97,7 @@ class GIEngine:
         # 初始化协方差
         imuerror_std = initstate_std.imuerror
         rssierror_std = initstate_std.rssierror
-        rssierror_std.brss = 0.0000000000000001
+        rssierror_std.brss = 0.0000000000000000000000000000001
         self.Cov_[StateID.P_ID:StateID.P_ID+3,StateID.P_ID:StateID.P_ID+3]= \
         np.diag(np.square(initstate_std.pos))
         self.Cov_[StateID.V_ID:StateID.V_ID+3,StateID.V_ID:StateID.V_ID+3]= \
@@ -115,6 +119,17 @@ class GIEngine:
         ## 当前IMU时间作为系统当前状态时间
         time = self.imucur_.time
         self.timestamp_ = time
+
+        if self.timestamp_ >= 357613:
+            aaa = 11
+
+        ## NHC更新
+        if self.options_.ifNHC == 1:
+            self.NHC_judge()
+
+        if self.timestamp_ <=357509 or 357557>=self.timestamp_>=357545:
+            self.Cov_[21,21] = 1
+
         ## 如果GNSS有效，则将GNSS更新时间设置为GNSS时间
         if self.gnssdata_.isvalid:
             updatetime_G = self.gnssdata_.time
@@ -125,12 +140,13 @@ class GIEngine:
             updatetime_B = self.bledata_.time
         else:
             updatetime_B = -1
-        ## 判断是否需要进行GNSS更新
+        
         imupre_ = self.imupre_
         imucur_ = self.imucur_
         gnssdata_ = self.gnssdata_
         bledata_ = self.bledata_
-        
+
+        ## 判断是否需要进行GNSS更新
         res_G = self.GisToUpdate(imupre_.time, imucur_.time, updatetime_G)
         ## 判断是否要进行BLE更新
         res_B = self.BisToUpdate(imupre_.time, imucur_.time, updatetime_B)
@@ -141,20 +157,14 @@ class GIEngine:
                 self.insPropagation(imupre_, imucur_)
             elif res_G == 1:
                 ## GNSS数据靠近上一历元，先对上一历元进行GNSS更新
-                if self.options_.filter == 'EKF':
-                    self.gnssUpdate(gnssdata_)
-                elif self.options_.filter == 'UKF':
-                    self.gnssUpdate_UKF(gnssdata_)
+                self.gnssUpdate(gnssdata_,self.options_.filter)
                 self.stateFeedback()
                 self.pvapre_ = self.pvacur_
                 self.insPropagation(imupre_, imucur_)
             elif res_G == 2:
                 ## GNSS数据靠近当前历元，先对当前IMU进行状态传播
                 self.insPropagation(imupre_, imucur_)
-                if self.options_.filter == 'EKF':
-                    self.gnssUpdate(gnssdata_)
-                elif self.options_.filter == 'UKF':
-                    self.gnssUpdate_UKF(gnssdata_)
+                self.gnssUpdate(gnssdata_,self.options_.filter)
                 self.stateFeedback()
             else:
                 ## GNSS数据在两个IMU数据之间(不靠近任何一个), 将当前IMU内插到整秒时刻
@@ -163,10 +173,7 @@ class GIEngine:
                 ## 对前一半IMU进行状态传播
                 self.insPropagation(imupre_, midimu)
                 ## 整秒时刻进行GNSS更新，并反馈系统状态
-                if self.options_.filter == 'EKF':
-                    self.gnssUpdate(gnssdata_)
-                elif self.options_.filter == 'UKF':
-                    self.gnssUpdate_UKF(gnssdata_)
+                self.gnssUpdate(gnssdata_,self.options_.filter)
                 self.stateFeedback()
                 ## 对后一半IMU进行状态传播
                 self.pvapre_ = self.pvacur_
@@ -174,29 +181,20 @@ class GIEngine:
         else:
             if res_G == 0:
                 ## 进入室内后使用UKF
-                if self.options_.filter == 'EKF':
-                    self.bleUpdate(bledata_)
-                elif self.options_.filter == 'UKF':
-                    self.bleUpdate_UKF(bledata_)
+                self.bleUpdate(bledata_,self.options_.filter)
                 self.stateFeedback()
                 self.pvapre_ = self.pvacur_
                 self.insPropagation(imupre_, imucur_)
             elif res_G == 1:
                 ## GNSS数据靠近上一历元，先对上一历元进行GNSS更新
-                if self.options_.filter == 'EKF':
-                    self.ble_gnssUpdate(gnssdata_,bledata_)
-                elif self.options_.filter == 'UKF':
-                    self.ble_gnssUpdate_UKF(gnssdata_,bledata_)
+                self.ble_gnssUpdate(gnssdata_,bledata_,self.options_.filter)
                 self.stateFeedback()
                 self.pvapre_ = self.pvacur_
                 self.insPropagation(imupre_, imucur_)
             elif res_G == 2:
                 ## GNSS数据靠近当前历元，先对当前IMU进行状态传播
                 self.insPropagation(imupre_, imucur_)
-                if self.options_.filter == 'EKF':
-                    self.ble_gnssUpdate(gnssdata_,bledata_)
-                elif self.options_.filter == 'UKF':
-                    self.ble_gnssUpdate_UKF(gnssdata_,bledata_)
+                self.ble_gnssUpdate(gnssdata_,bledata_,self.options_.filter)
                 self.stateFeedback()
             else:
                 ## GNSS数据在两个IMU数据之间(不靠近任何一个), 将当前IMU内插到整秒时刻
@@ -205,14 +203,14 @@ class GIEngine:
                 ## 对前一半IMU进行状态传播
                 self.insPropagation(imupre_, midimu)
                 ## 整秒时刻进行GNSS更新，并反馈系统状态
-                if self.options_.filter == 'EKF':
-                    self.ble_gnssUpdate(gnssdata_,bledata_)
-                elif self.options_.filter == 'UKF':
-                    self.ble_gnssUpdate_UKF(gnssdata_,bledata_)
+                self.ble_gnssUpdate(gnssdata_,bledata_,self.options_.filter)
                 self.stateFeedback()
                 ## 对后一半IMU进行状态传播
                 self.pvapre_ = self.pvacur_
                 self.insPropagation(midimu, imucur_)
+            if self.options_.ifALT == 1:
+                self.altitude_Update(bledata_)
+                self.stateFeedback()
 
         ## 检查协方差矩阵对角线元素
         self.checkCov()
@@ -347,105 +345,6 @@ class GIEngine:
         elif self.options_.filter == 'UKF':
             self.UKFPredict(Phi, Qd)
 
-    def gnssUpdate(self,gnssdata:ty.GNSS):
-        ## IMU位置转到GNSS天线相位中心位置
-        Dr_inv = Earth.DRi(self.pvacur_.pos)
-        Dr = Earth.DR(self.pvacur_.pos)
-        antenna_pos = self.pvacur_.pos + Dr_inv @ self. pvacur_.att.cbn @ self.options_.antlever_G
-        ## GNSS位置测量新息
-        dz = Dr @ (antenna_pos - gnssdata.blh)
-        ## 构造GNSS位置观测矩阵
-        H_gnsspos = np.zeros((3, self.Cov_.shape[0]))
-        H_gnsspos[0:3,StateID.P_ID:StateID.P_ID+3] = np.identity(3)
-        H_gnsspos[0:3,StateID.PHI_ID:StateID.PHI_ID+3] = ro.skewSymmetric(self.pvacur_.att.cbn @ self.options_.antlever_G)
-        ## 位置观测噪声阵
-        R_gnsspos = np.diag(np.multiply(gnssdata.std, gnssdata.std))
-        ## EKF更新协方差和误差状态
-        dz = dz.reshape(3, 1)
-        self.EKFUpdate(dz, H_gnsspos, R_gnsspos)
-        ## GNSS更新之后设置为不可用
-        self.gnssdata_.isvalid = False
-    
-    def bleUpdate(self,bledata:ty.BLE):
-        ## IMU位置转到BLE天线相位中心位置
-        Dr_inv = Earth.DRi(self.pvacur_.pos)
-        Dr = Earth.DR(self.pvacur_.pos)
-        antenna_pos = self.pvacur_.pos + Dr_inv @ self. pvacur_.att.cbn @ self.options_.antlever_B
-        ## RSSI误差补偿
-        bledata.RSSI -= self.rssierro_.brss
-        ## 距离测量新息与H阵中的一部分Gm
-        dz = np.zeros(bledata.AP)
-        Gm = np.zeros((bledata.AP,3))
-        Bm = np.zeros(bledata.AP)
-        for i in range(bledata.AP):
-            dI = np.linalg.norm(Dr @ (antenna_pos - bledata.blh[i]))
-            dB = 10**((self.options_.BLE_A - bledata.RSSI[i])/(10*self.options_.BLE_n))
-            zk = dI - dB
-            dz[i] = zk
-            e = (1+np.log(10)*self.rssierro_.brss/10*self.options_.BLE_n)/dI * (Dr @ (antenna_pos - bledata.blh[i]))  
-            Gm[i] = e
-            Bm[i] = np.log(10)*dI/10*self.options_.BLE_n
-        Gm = Gm.reshape(bledata.AP,3)
-        Bm = Bm.reshape(bledata.AP, 1)
-        ## BLE观测矩阵
-        H_ble = np.zeros((bledata.AP, self.Cov_.shape[0]))
-        H_ble[0:bledata.AP,StateID.P_ID:StateID.P_ID+3] = Gm
-        H_ble[0:bledata.AP,StateID.BRSS_ID:StateID.BRSS_ID+1] = Bm
-        ## 位置观测噪声阵
-        d_std = np.full((bledata.AP,), self.options_.rssinoise.rss_std+1)
-        R_d = np.diag(np.multiply(d_std, d_std))
-        ## EKF更新协方差和误差状态
-        dz = dz.reshape(bledata.AP, 1)
-        self.EKFUpdate(dz, H_ble, R_d)
-        ## BLE更新之后设置为不可用
-        self.bledata_.isvalid = False
-
-    def ble_gnssUpdate(self,gnssdata:ty.GNSS,bledata:ty.BLE):
-        ## IMU位置转到BLE和GNSS天线相位中心位置
-        Dr_inv = Earth.DRi(self.pvacur_.pos)
-        Dr = Earth.DR(self.pvacur_.pos)
-        antenna_pos_G = self.pvacur_.pos + Dr_inv @ self. pvacur_.att.cbn @ self.options_.antlever_G
-        antenna_pos_B = self.pvacur_.pos + Dr_inv @ self. pvacur_.att.cbn @ self.options_.antlever_B
-        ## RSSI误差补偿
-        bledata.RSSI -= self.rssierro_.brss
-        ## GNSS位置测量新息
-        dz_G = Dr @ (antenna_pos_G - gnssdata.blh)
-        ## 距离测量新息与H阵中的一部分Gm
-        dz_B = np.zeros(bledata.AP)
-        Gm = np.zeros((bledata.AP,3))
-        Bm = np.zeros(bledata.AP)
-        for i in range(bledata.AP):
-            dI = np.linalg.norm(Dr @ (antenna_pos_B - bledata.blh[i]))
-            dB = 10**((self.options_.BLE_A - bledata.RSSI[i])/(10*self.options_.BLE_n))
-            zk = dI - dB
-            dz_B[i] = zk
-            e = (1+np.log(10)*self.rssierro_.brss/10*self.options_.BLE_n)/dI * (Dr @ (antenna_pos_B - bledata.blh[i]))
-            Gm[i] = e
-            Bm[i] = np.log(10)*dI/10*self.options_.BLE_n
-        Gm = Gm.reshape(bledata.AP,3)
-        Bm = Bm.reshape(bledata.AP, 1)
-        ##两个新息合二为一
-        dz = np.concatenate((dz_B,dz_G),axis=0)
-        ## 构造GNSS位置观测矩阵
-        H_gnsspos = np.zeros((3, self.Cov_.shape[0]))
-        H_gnsspos[0:3,StateID.P_ID:StateID.P_ID+3] = np.identity(3)
-        H_gnsspos[0:3,StateID.PHI_ID:StateID.PHI_ID+3] = ro.skewSymmetric(self.pvacur_.att.cbn @ self.options_.antlever_G)
-        ## 构造BLE观测矩阵
-        H_ble = np.zeros((bledata.AP, self.Cov_.shape[0]))
-        H_ble[0:bledata.AP,StateID.P_ID:StateID.P_ID+3] = Gm
-        H_ble[0:bledata.AP,StateID.BRSS_ID:StateID.BRSS_ID+1] = Bm
-        ## 两个观测矩阵合二为一
-        H = np.vstack((H_ble,H_gnsspos))
-        ## 观测噪声阵
-        d_std = np.full((bledata.AP,), self.options_.rssinoise.rss_std+1)
-        R = np.diag(np.concatenate((np.multiply(d_std, d_std),np.multiply(gnssdata.std, gnssdata.std))))
-        ## EKF更新协方差和误差状态
-        dz = dz.reshape(bledata.AP+3, 1)
-        self.EKFUpdate(dz, H, R)
-        ## BLE和GNSS更新之后设置为不可用
-        self.gnssdata_.isvalid = False
-        self.bledata_.isvalid = False
-
     def GisToUpdate(self,imutime1:float,imutime2:float,updatetime_G:float) -> int:
         if np.abs(imutime1 - updatetime_G) < GIEngine.TIME_ALIGN_ERR :
             ## 更新时间靠近imutime1
@@ -498,95 +397,6 @@ class GIEngine:
         ## 如果每次更新后都进行状态反馈，则更新前dx_一直为0，下式可以简化为：dx_ = K * dz
         self.dx_  = self.dx_ + K @ (dz - H @ self.dx_)
         self.Cov_ = I @ self.Cov_ @ I.transpose() + K @ R @ K.transpose()
-
-    def gnssUpdate_UKF(self,gnssdata:ty.GNSS):
-        ## IMU位置转到GNSS天线相位中心位置
-        Dr_inv = Earth.DRi(self.pvacur_.pos)
-        Dr = Earth.DR(self.pvacur_.pos)
-        antenna_pos = self.pvacur_.pos + Dr_inv @ self. pvacur_.att.cbn @ self.options_.antlever_G
-        ## GNSS位置测量新息
-        dz = Dr @ (antenna_pos - gnssdata.blh)
-        ## 构造GNSS位置观测矩阵
-        H_gnsspos = np.zeros((3, self.Cov_.shape[0]))
-        H_gnsspos[0:3,StateID.P_ID:StateID.P_ID+3] = np.identity(3)
-        H_gnsspos[0:3,StateID.PHI_ID:StateID.PHI_ID+3] = ro.skewSymmetric(self.pvacur_.att.cbn @ self.options_.antlever_G)
-        ## 位置观测噪声阵
-        R_gnsspos = np.diag(np.multiply(gnssdata.std, gnssdata.std))
-        ## EKF更新协方差和误差状态
-        dz = dz.reshape(3, 1)
-        bledata = 0
-        self.UKFUpdate(dz, H_gnsspos, R_gnsspos,antenna_pos,bledata)
-        ## GNSS更新之后设置为不可用
-        self.gnssdata_.isvalid = False
-
-    def bleUpdate_UKF(self,bledata:ty.BLE):
-        ## IMU位置转到BLE天线相位中心位置
-        Dr_inv = Earth.DRi(self.pvacur_.pos)
-        Dr = Earth.DR(self.pvacur_.pos)
-        antenna_pos = self.pvacur_.pos + Dr_inv @ self. pvacur_.att.cbn @ self.options_.antlever_B
-        ## RSSI误差补偿
-        bledata.RSSI -= self.rssierro_.brss
-        dz = np.zeros(bledata.AP)
-        for i in range(bledata.AP):
-            dI = np.linalg.norm(Dr @ (antenna_pos - bledata.blh[i]))
-            dB = 10**((self.options_.BLE_A - bledata.RSSI[i])/(10*self.options_.BLE_n))
-            zk = dI - dB
-            dz[i] = zk
-        d_std = np.full((bledata.AP,), self.options_.rssinoise.rss_std+1)
-        R_d = np.diag(np.multiply(d_std, d_std)) 
-        dz = dz.reshape(bledata.AP, 1)
-        H_gnss = 0
-        self.UKFUpdate(dz, H_gnss, R_d, antenna_pos,bledata)
-        self.bledata_.isvalid = False
-
-    def ble_gnssUpdate_UKF(self,gnssdata:ty.GNSS,bledata:ty.BLE):
-        ## IMU位置转到BLE和GNSS天线相位中心位置
-        Dr_inv = Earth.DRi(self.pvacur_.pos)
-        Dr = Earth.DR(self.pvacur_.pos)
-        antenna_pos_G = self.pvacur_.pos + Dr_inv @ self. pvacur_.att.cbn @ self.options_.antlever_G
-        antenna_pos_B = self.pvacur_.pos + Dr_inv @ self. pvacur_.att.cbn @ self.options_.antlever_B
-        ## RSSI误差补偿
-        bledata.RSSI -= self.rssierro_.brss
-        ## GNSS位置测量新息
-        dz_G = Dr @ (antenna_pos_G - gnssdata.blh)
-        ## 距离测量新息与H阵中的一部分Gm
-        dz_B = np.zeros(bledata.AP)
-        for i in range(bledata.AP):
-            dI = np.linalg.norm(Dr @ (antenna_pos_B - bledata.blh[i]))
-            dB = 10**((self.options_.BLE_A - bledata.RSSI[i])/(10*self.options_.BLE_n))
-            zk = dI - dB
-            dz_B[i] = zk
-        ##两个新息合二为一
-        dz = np.concatenate((dz_B,dz_G),axis=0)
-        ## 构造GNSS位置观测矩阵
-        H_gnsspos = np.zeros((3, self.Cov_.shape[0]))
-        H_gnsspos[0:3,StateID.P_ID:StateID.P_ID+3] = np.identity(3)
-        H_gnsspos[0:3,StateID.PHI_ID:StateID.PHI_ID+3] = ro.skewSymmetric(self.pvacur_.att.cbn @ self.options_.antlever_G)
-        ## 观测噪声阵
-        d_std = np.full((bledata.AP,), self.options_.rssinoise.rss_std+1)
-        R = np.diag(np.concatenate((np.multiply(d_std, d_std),np.multiply(gnssdata.std, gnssdata.std))))
-        self.UKFUpdate(dz, H_gnsspos, R, antenna_pos_B , bledata )
-
-    def ble_ob_func(self,sp,antenna_pos:np.ndarray,bledata:ty.BLE) -> np.ndarray:
-        transformed_sigma_point = np.zeros(bledata.AP)
-        Dr = Earth.DR(self.pvacur_.pos)
-        for i in range(bledata.AP):
-            dIi = np.linalg.norm(Dr @(antenna_pos - bledata.blh[i]) + sp[0:3])
-            di = np.linalg.norm(Dr @(antenna_pos - bledata.blh[i]))
-            zi = dIi - di*10**(sp[-1]/10*self.options_.BLE_n)
-            transformed_sigma_point[i] = zi
-        return transformed_sigma_point
-
-    def ble_gnss_ob_func(self,sp:np.ndarray,H_gnss:np.ndarray,antenna_pos:np.ndarray,bledata:ty.BLE) -> np.ndarray:
-        transformed_sigma_point = np.zeros(bledata.AP+3)
-        Dr = Earth.DR(self.pvacur_.pos)
-        for i in range(bledata.AP):
-            dIi = np.linalg.norm(Dr @(antenna_pos - bledata.blh[i]) + sp[0:3])
-            di = np.linalg.norm(Dr @(antenna_pos - bledata.blh[i]))
-            zi = dIi - di*10**(sp[-1]/10*self.options_.BLE_n)
-            transformed_sigma_point[i] = zi
-        transformed_sigma_point[-4:-1] =  H_gnss @ sp
-        return transformed_sigma_point
     
     def UKFPredict(self,Phi:np.ndarray,Qd:np.ndarray):
         n = GIEngine.RANK
@@ -602,6 +412,15 @@ class GIEngine:
 
         x = np.copy(self.dx_).reshape((1, n))
         Cov = np.copy(self.Cov_)
+
+        def is_positive_definite(matrix):
+            try:
+                np.linalg.cholesky(matrix)
+                return False
+            except np.linalg.LinAlgError:
+                return True
+        if is_positive_definite(Cov):
+            Cov[21,21] = 0.1
         # 生成 Sigma Points
         sqrt_P = np.linalg.cholesky(n * Cov)
         sigma_points = np.zeros((n, 2*n+1))
@@ -650,7 +469,287 @@ class GIEngine:
         K = np.dot(Pxz, np.linalg.inv(Pz_pred))
         self.dx_ = (x_pred.T + np.dot(K, dz - dz_pred[:, np.newaxis]))
         self.Cov_ = self.Cov_ - np.dot(np.dot(K, Pz_pred), K.T)
+    
+    def gnssUpdate(self,gnssdata:ty.GNSS,filter):
+        ## IMU位置转到GNSS天线相位中心位置
+        Dr_inv = Earth.DRi(self.pvacur_.pos)
+        Dr = Earth.DR(self.pvacur_.pos)
+        antenna_pos = self.pvacur_.pos + Dr_inv @ self. pvacur_.att.cbn @ self.options_.antlever_G
+        ## GNSS位置测量新息
+        dz = Dr @ (antenna_pos - gnssdata.blh)
+        ## 构造GNSS位置观测矩阵
+        H_gnsspos = np.zeros((3, self.Cov_.shape[0]))
+        H_gnsspos[0:3,StateID.P_ID:StateID.P_ID+3] = np.identity(3)
+        H_gnsspos[0:3,StateID.PHI_ID:StateID.PHI_ID+3] = ro.skewSymmetric(self.pvacur_.att.cbn @ self.options_.antlever_G)
+        ## 位置观测噪声阵
+        R_gnsspos = np.diag(np.multiply(gnssdata.std, gnssdata.std))
+        ## EKF更新协方差和误差状态
+        dz = dz.reshape(3, 1)
+        if filter == 'EKF':
+            self.EKFUpdate(dz, H_gnsspos, R_gnsspos)
+        elif filter == 'UKF':
+            bledata = 0
+            self.UKFUpdate(dz, H_gnsspos, R_gnsspos,antenna_pos,bledata)
+        ## GNSS更新之后设置为不可用
+        self.gnssdata_.isvalid = False
 
+    def bleUpdate(self,bledata:ty.BLE,filter):
+        ## IMU位置转到BLE天线相位中心位置
+        Dr_inv = Earth.DRi(self.pvacur_.pos)
+        Dr = Earth.DR(self.pvacur_.pos)
+        antenna_pos = self.pvacur_.pos + Dr_inv @ self. pvacur_.att.cbn @ self.options_.antlever_B
+        ## RSSI误差补偿
+        bledata.RSSI -= self.rssierro_.brss
+        if filter == 'EKF':
+            ## 距离测量新息与H阵中的一部分Gm
+            dz = np.zeros(bledata.AP)
+            Gm = np.zeros((bledata.AP,3))
+            Bm = np.zeros(bledata.AP)
+            for i in range(bledata.AP):
+                dI = np.linalg.norm(Dr @ (antenna_pos - bledata.blh[i]))
+                dB = 10**((self.options_.BLE_A - bledata.RSSI[i])/(10*self.options_.BLE_n))
+                zk = dI - dB
+                dz[i] = zk
+                e = (1+np.log(10)*self.rssierro_.brss/10*self.options_.BLE_n)/dI * (Dr @ (antenna_pos - bledata.blh[i]))  
+                Gm[i] = e
+                Bm[i] = np.log(10)*dI/10*self.options_.BLE_n
+            Gm = Gm.reshape(bledata.AP,3)
+            Bm = Bm.reshape(bledata.AP, 1)
+            ## BLE观测矩阵
+            H_ble = np.zeros((bledata.AP, self.Cov_.shape[0]))
+            H_ble[0:bledata.AP,StateID.P_ID:StateID.P_ID+3] = Gm
+            H_ble[0:bledata.AP,StateID.BRSS_ID:StateID.BRSS_ID+1] = Bm
+            ## 位置观测噪声阵
+            d_std = np.full((bledata.AP,), self.options_.rssinoise.rss_std+1)
+            R_d = np.diag(np.multiply(d_std, d_std))
+            ## EKF更新协方差和误差状态
+            dz = dz.reshape(bledata.AP, 1)
+            self.EKFUpdate(dz, H_ble, R_d)
+        elif filter == 'UKF':
+            dz = np.zeros(bledata.AP)
+            for i in range(bledata.AP):
+                dI = np.linalg.norm(Dr @ (antenna_pos - bledata.blh[i]))
+                dB = 10**((self.options_.BLE_A - bledata.RSSI[i])/(10*self.options_.BLE_n))
+                zk = dI - dB
+                dz[i] = zk
+            d_std = np.full((bledata.AP,), self.options_.rssinoise.rss_std+0.5)
+            R_d = np.diag(np.multiply(d_std, d_std)) 
+            dz = dz.reshape(bledata.AP, 1)
+            H_gnss = 0
+            self.UKFUpdate(dz, H_gnss, R_d, antenna_pos,bledata)
+        ## BLE更新之后设置为不可用
+        self.bledata_.isvalid = False
+
+    def ble_gnssUpdate(self,gnssdata:ty.GNSS,bledata:ty.BLE,filter):
+        ## IMU位置转到BLE和GNSS天线相位中心位置
+        Dr_inv = Earth.DRi(self.pvacur_.pos)
+        Dr = Earth.DR(self.pvacur_.pos)
+        antenna_pos_G = self.pvacur_.pos + Dr_inv @ self. pvacur_.att.cbn @ self.options_.antlever_G
+        antenna_pos_B = self.pvacur_.pos + Dr_inv @ self. pvacur_.att.cbn @ self.options_.antlever_B
+        ## RSSI误差补偿
+        bledata.RSSI -= self.rssierro_.brss
+        if filter == 'EKF':
+            ## GNSS位置测量新息
+            dz_G = Dr @ (antenna_pos_G - gnssdata.blh)
+            ## 距离测量新息与H阵中的一部分Gm
+            dz_B = np.zeros(bledata.AP)
+            Gm = np.zeros((bledata.AP,3))
+            Bm = np.zeros(bledata.AP)
+            for i in range(bledata.AP):
+                dI = np.linalg.norm(Dr @ (antenna_pos_B - bledata.blh[i]))
+                dB = 10**((self.options_.BLE_A - bledata.RSSI[i])/(10*self.options_.BLE_n))
+                zk = dI - dB
+                dz_B[i] = zk
+                e = (1+np.log(10)*self.rssierro_.brss/10*self.options_.BLE_n)/dI * (Dr @ (antenna_pos_B - bledata.blh[i]))
+                Gm[i] = e
+                Bm[i] = np.log(10)*dI/10*self.options_.BLE_n
+            Gm = Gm.reshape(bledata.AP,3)
+            Bm = Bm.reshape(bledata.AP, 1)
+            ##两个新息合二为一
+            dz = np.concatenate((dz_B,dz_G),axis=0)
+            ## 构造GNSS位置观测矩阵
+            H_gnsspos = np.zeros((3, self.Cov_.shape[0]))
+            H_gnsspos[0:3,StateID.P_ID:StateID.P_ID+3] = np.identity(3)
+            H_gnsspos[0:3,StateID.PHI_ID:StateID.PHI_ID+3] = ro.skewSymmetric(self.pvacur_.att.cbn @ self.options_.antlever_G)
+            ## 构造BLE观测矩阵
+            H_ble = np.zeros((bledata.AP, self.Cov_.shape[0]))
+            H_ble[0:bledata.AP,StateID.P_ID:StateID.P_ID+3] = Gm
+            H_ble[0:bledata.AP,StateID.BRSS_ID:StateID.BRSS_ID+1] = Bm
+            ## 两个观测矩阵合二为一
+            H = np.vstack((H_ble,H_gnsspos))
+            ## 观测噪声阵
+            d_std = np.full((bledata.AP,), self.options_.rssinoise.rss_std+1)
+            R = np.diag(np.concatenate((np.multiply(d_std, d_std),np.multiply(gnssdata.std, gnssdata.std))))
+            ## EKF更新协方差和误差状态
+            dz = dz.reshape(bledata.AP+3, 1)
+            self.EKFUpdate(dz, H, R)
+        elif filter == 'UKF':
+            ## GNSS位置测量新息
+            dz_G = Dr @ (antenna_pos_G - gnssdata.blh)
+            ## 距离测量新息与H阵中的一部分Gm
+            dz_B = np.zeros(bledata.AP)
+            for i in range(bledata.AP):
+                dI = np.linalg.norm(Dr @ (antenna_pos_B - bledata.blh[i]))
+                dB = 10**((self.options_.BLE_A - bledata.RSSI[i])/(10*self.options_.BLE_n))
+                zk = dI - dB
+                dz_B[i] = zk
+            ##两个新息合二为一
+            dz = np.concatenate((dz_B,dz_G),axis=0)
+            ## 构造GNSS位置观测矩阵
+            H_gnsspos = np.zeros((3, self.Cov_.shape[0]))
+            H_gnsspos[0:3,StateID.P_ID:StateID.P_ID+3] = np.identity(3)
+            H_gnsspos[0:3,StateID.PHI_ID:StateID.PHI_ID+3] = ro.skewSymmetric(self.pvacur_.att.cbn @ self.options_.antlever_G)
+            ## 观测噪声阵
+            d_std = np.full((bledata.AP,), self.options_.rssinoise.rss_std+0.5)
+            R = np.diag(np.concatenate((np.multiply(d_std, d_std),np.multiply(gnssdata.std, gnssdata.std))))
+            dz = dz.reshape(bledata.AP+3, 1)
+            self.UKFUpdate(dz, H_gnsspos, R, antenna_pos_B , bledata )
+        ## BLE和GNSS更新之后设置为不可用
+        self.gnssdata_.isvalid = False
+        self.bledata_.isvalid = False
+
+    def NHC_judge(self):
+        self.NHC_data.gz += self.imucur_.dtheta[2]
+        if self.timestamp_ - self.NHC_data.time >= 0.5:
+            v = (self.pvacur_.att.cbn.T @ self.pvacur_.vel)[0]
+            dyaw = np.abs(self.NHC_data.gz*Angle.R2D)/(self.timestamp_ - self.NHC_data.time)
+            # if v <= 5:
+            #     dy = 2.0
+            # elif 5 < v <= 10:
+            #     dy = 1.5
+            # elif 10< v <=13:
+            #     dy = 1
+            # elif v > 13:
+            #     dy = 0.7
+            if dyaw < 0.5:
+                self.NHC_Update()
+                self.stateFeedback()
+            self.NHC_data.gz = 0
+            self.NHC_data.time = self.timestamp_
+
+    def NHC_Update(self):
+        ## 速度测量新息
+        dz = (self.pvacur_.att.cbn.T @ self.pvacur_.vel)[1:].reshape(2, 1)
+        ## 观测矩阵
+        M1 = self.pvacur_.att.cbn.T
+        M2 = -np.cross(self.pvacur_.att.cbn.T, self.pvacur_.vel)
+        H = np.zeros((2, self.Cov_.shape[0]))
+        H[0,StateID.V_ID :StateID.V_ID+3] = M1[1]
+        H[0,StateID.PHI_ID :StateID.PHI_ID+3] = M2[1]
+        H[1,StateID.V_ID :StateID.V_ID+3] = M1[2]
+        H[1,StateID.PHI_ID :StateID.PHI_ID+3] = M2[2]
+        ##观测噪声阵
+        R = np.diag(np.multiply(np.array([0.55, 0.1]),np.array([0.1, 0.1])))
+        if self.options_.filter == 'EKF':
+        ##计算Kalman增益
+            temp =  H @ self.Cov_ @ H.transpose() + R
+            K =  self.Cov_ @ H.transpose() @ np.linalg.inv(temp)
+            ## 更新系统误差状态和协方差
+            I = np.identity(self.Cov_.shape[0])
+            I = I - K @ H
+            ## 如果每次更新后都进行状态反馈，则更新前dx_一直为0，下式可以简化为：dx_ = K * dz
+            self.dx_  = self.dx_ + K @ (dz - H @ self.dx_)
+            self.Cov_ = I @ self.Cov_ @ I.transpose() + K @ R @ K.transpose()
+        else:
+            n = GIEngine.RANK
+            alpha = 1.0
+            kappa = 0.0
+            beta = 2.0
+            ##
+            lambda_ = alpha**2 * (n + kappa) - n
+            Wm = np.full(2*n+1, 0.5/(n+lambda_))
+            Wm[0] = lambda_/(n+lambda_)
+            Wc = np.copy(Wm)
+            Wc[0] += (1 - alpha**2 + beta)
+            x_pred = np.copy(self.dx_).reshape((1, n))
+            Cov_pred = np.copy(self.Cov_)
+            ## 计算 Sigma 点集
+            sqrt_Cov_pred = np.linalg.cholesky(n * Cov_pred)
+            sigma_points = np.zeros((n, 2*n+1))
+            sigma_points[:, 0] = x_pred
+            sigma_points[:, 1:n+1] = x_pred.reshape((n, 1)) + sqrt_Cov_pred
+            sigma_points[:, n+1:] = x_pred.reshape((n, 1)) - sqrt_Cov_pred
+            ## 通过非线性观测方程转换 Sigma Points
+            transformed_sigma_points = np.array([(H @ sp) for sp in sigma_points.T]).T
+            # 计算观测的均值和协方差
+            dz_pred = np.dot(transformed_sigma_points,Wm)
+            Pz_pred = np.dot(Wc * (transformed_sigma_points - dz_pred[:, np.newaxis])  , (transformed_sigma_points - dz_pred[:, np.newaxis]).T) + R
+            ## 计算交叉协方差
+            Pxz = np.dot( Wc * self.transformed_deviation , (transformed_sigma_points - dz_pred[:, np.newaxis]).T)
+            # 更新卡尔曼增益、状态估计和协方差
+            K = np.dot(Pxz, np.linalg.inv(Pz_pred))
+            self.dx_ = (x_pred.T + np.dot(K, dz - dz_pred[:, np.newaxis]))
+            self.Cov_ = self.Cov_ - np.dot(np.dot(K, Pz_pred), K.T)
+
+    def altitude_Update(self,bledata:ty.BLE):
+        dz = np.array([self.pvacur_.pos[2] - bledata.alt]) * -1
+        H= np.zeros((3, self.Cov_.shape[0]))
+        H[0:3,StateID.P_ID:StateID.P_ID+3] = np.identity(3)
+        H_alt = H[2]
+        R = np.array([0.05**2])
+        if filter == 'EKF':
+            ## 计算Kalman增益
+            temp =  H_alt @ self.Cov_ @ H_alt.transpose() + R
+            K =  self.Cov_ @ H_alt.transpose() @ np.linalg.inv(temp)
+
+            ## 更新系统误差状态和协方差
+            I = np.identity(self.Cov_.shape[0])
+            I = I - K @ H_alt
+            ## 如果每次更新后都进行状态反馈，则更新前dx_一直为0，下式可以简化为：dx_ = K * dz
+            self.dx_  = self.dx_ + K @ (dz - H_alt @ self.dx_)
+            self.Cov_ = I @ self.Cov_ @ I.transpose() + K @ R @ K.transpose()
+        else :
+            n = GIEngine.RANK
+            alpha = 1.0
+            kappa = 0.0
+            beta = 2.0
+            ##
+            lambda_ = alpha**2 * (n + kappa) - n
+            Wm = np.full(2*n+1, 0.5/(n+lambda_))
+            Wm[0] = lambda_/(n+lambda_)
+            Wc = np.copy(Wm)
+            Wc[0] += (1 - alpha**2 + beta)
+            x_pred = np.copy(self.dx_).reshape((1, n))
+            Cov_pred = np.copy(self.Cov_)
+            ## 计算 Sigma 点集
+            sqrt_Cov_pred = np.linalg.cholesky(n * Cov_pred)
+            sigma_points = np.zeros((n, 2*n+1))
+            sigma_points[:, 0] = x_pred
+            sigma_points[:, 1:n+1] = x_pred.reshape((n, 1)) + sqrt_Cov_pred
+            sigma_points[:, n+1:] = x_pred.reshape((n, 1)) - sqrt_Cov_pred
+            ## 通过非线性观测方程转换 Sigma Points
+            transformed_sigma_points = np.array([(H_alt @ sp) for sp in sigma_points.T]).T
+            # 计算观测的均值和协方差
+            dz_pred = np.array([np.dot(transformed_sigma_points,Wm)])
+            Pz_pred = np.dot(Wc * (transformed_sigma_points - dz_pred[:, np.newaxis])  , (transformed_sigma_points - dz_pred[:, np.newaxis]).T) + R
+            ## 计算交叉协方差
+            Pxz = np.dot( Wc * self.transformed_deviation , (transformed_sigma_points - dz_pred[:, np.newaxis]).T)
+            # 更新卡尔曼增益、状态估计和协方差
+            K = np.dot(Pxz, np.linalg.inv(Pz_pred))
+            self.dx_ = (x_pred.T + np.dot(K, dz - dz_pred[:, np.newaxis]))
+            self.Cov_ = self.Cov_ - np.dot(np.dot(K, Pz_pred), K.T)
+        
+    def ble_ob_func(self,sp,antenna_pos:np.ndarray,bledata:ty.BLE) -> np.ndarray:
+        transformed_sigma_point = np.zeros(bledata.AP)
+        Dr = Earth.DR(self.pvacur_.pos)
+        for i in range(bledata.AP):
+            dIi = np.linalg.norm(Dr @(antenna_pos - bledata.blh[i]) + sp[0:3] + np.cross(self.pvacur_.att.cbn@self.options_.antlever_B,sp[6:9]))
+            di = np.linalg.norm(Dr @(antenna_pos - bledata.blh[i]))
+            zi = dIi - di*10**(sp[-1]/10*self.options_.BLE_n)
+            transformed_sigma_point[i] = zi
+        return transformed_sigma_point
+
+    def ble_gnss_ob_func(self,sp:np.ndarray,H_gnss:np.ndarray,antenna_pos:np.ndarray,bledata:ty.BLE) -> np.ndarray:
+        transformed_sigma_point = np.zeros(bledata.AP+3)
+        Dr = Earth.DR(self.pvacur_.pos)
+        for i in range(bledata.AP):
+            dIi = np.linalg.norm(Dr @(antenna_pos - bledata.blh[i]) + sp[0:3]+ np.cross(self.pvacur_.att.cbn@self.options_.antlever_B,sp[6:9]))
+            di = np.linalg.norm(Dr @(antenna_pos - bledata.blh[i]))
+            zi = dIi - di*10**(sp[-1]/10*self.options_.BLE_n)
+            transformed_sigma_point[i] = zi
+        transformed_sigma_point[-4:-1] =  H_gnss @ sp
+        return transformed_sigma_point
+    
     def stateFeedback(self):
         ## 位置误差反馈
         delta_r = np.concatenate(self.dx_[StateID.P_ID:StateID.P_ID+3,0:1])

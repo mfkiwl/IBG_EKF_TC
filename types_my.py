@@ -13,6 +13,7 @@ class BLE:
         self.AP = 0
         self.RSSI = np.zeros(3)
         self.blh = np.array([np.zeros(3)])
+        self.alt = 0.0
         self.isvalid = False
 
 class IMU:

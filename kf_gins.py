@@ -61,6 +61,13 @@ def LoadOptions():
 
     ## 滤波算法
     options.filter = config['filter']
+
+    ## 初始时间
+    options.starttime = config['starttime']
+
+    ## NHC与高度更新
+    options.ifNHC = config['NHC']
+    options.ifALT = config['ALT']
     
     return options
 
@@ -85,18 +92,19 @@ def gnssload(data_):
     gnss_.std = np.array(data_[4:7])
     gnss_.blh[0] *= Angle.D2R
     gnss_.blh[1] *= Angle.D2R
-    return(gnss_)
+    return gnss_
 
-def bleload(data_):
+def bleload(data_,beacon_data):
     ble_ = ty.BLE()
     ble_.time = data_['t']
     ble_.AP = len(data_['rssi'])
     ble_.RSSI = np.array(data_['rssi']).astype(float)
     ble_.blh = np.array(data_['coord'])
     ble_.blh[:,0:2] *= Angle.D2R
-    return(ble_)
+    ble_.alt = data_['alt']
+    return ble_
 
-def align(imu_data,gnss_data,ble_data,starttime):
+def align(imu_data,gnss_data,ble_data,beacon_data,starttime):
     imu_cur = ty.IMU()
     gnss = ty.GNSS()
     imu_index = 0
@@ -114,7 +122,7 @@ def align(imu_data,gnss_data,ble_data,starttime):
         if row[0] > starttime:
             break
     for index,row in ble_data.iterrows():
-        ble = bleload(row)
+        ble = bleload(row,beacon_data)
         ble_index = index
         if row['t'] > starttime:
             break
@@ -140,17 +148,18 @@ pre_time = starttime
 ## 读取数据
 imu_data = np.genfromtxt(config['imupath'],delimiter=',')
 gnss_data = np.genfromtxt(config['gnsspath'],delimiter=',')
-ble_data = pd.read_csv(config['blepath'], header=None, names=['t','rssi','coord','id'])
+ble_data = pd.read_csv(config['blepath'], header=None, names=['t','rssi','coord','id','alt'])
 ble_data['rssi'] = ble_data['rssi'].apply(lambda x: eval(x))
 ble_data['coord'] = ble_data['coord'].apply(lambda x: eval(x))
 ble_data['id'] = ble_data['id'].apply(lambda x: eval(x))
+beacon_data = pd.read_csv(config['beaconpath'])
 
 ## 停止时间为-1时设置停止时间为数据集的最后一个时间
 if endtime < 0 :
     endtime = imu_data[-1, 0]
 
 ## 初始数据对齐
-imu_cur,gnss,ble,is_index,gs_index,bs_index,pre_time = align(imu_data,gnss_data,ble_data,starttime)
+imu_cur,gnss,ble,is_index,gs_index,bs_index,pre_time = align(imu_data,gnss_data,ble_data,beacon_data,starttime)
 
 ## 初始数据载入
 giengine.addImuData(imu_cur, True)
@@ -167,7 +176,7 @@ for row in imu_data[is_index+1:]:
     ## BLE数据载入
     if bs_index<ble_data.shape[0]:
         if ble.time < imu_cur.time and ble_data['t'][bs_index] < endtime:
-            ble = bleload(ble_data.iloc[bs_index])
+            ble = bleload(ble_data.iloc[bs_index],beacon_data)
             bs_index += 1
             giengine.addBleData(ble)
     ## IMU数据载入

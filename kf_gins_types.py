@@ -63,3 +63,13 @@ class GINSOptions:
         ## BLE传播参数
         self.BLE_A = 0.0
         self.BLE_n = 0.0
+        ## 初始时间
+        self.starttime = 0.0
+        ## 是否使用NHC与高度更新
+        self.ifNHC = 0
+        self.ifALT = 0
+
+class NHCData:
+    def __init__(self):
+        self.time = 0.0
+        self.gz = 0.0

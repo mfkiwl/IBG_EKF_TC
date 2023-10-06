@@ -1,16 +1,20 @@
 ## 使用滤波算法
 filter: 'UKF'
+## 是否使用NHC与高度更新
+NHC : 1
+ALT : 1
 # IMU和GNSS数据文件路径
 # imudata and gnssdata filepath
 imupath: 'E:\BaiduSyncdisk\数据\测试集\IMU测试集.csv'
-gnsspath: 'E:\BaiduSyncdisk\数据\测试集\GNSS测试集_无室内0824.csv'
-blepath: 'E:\BaiduSyncdisk\数据\测试集\RSSI仿真数据_std3_无室外0824.csv'
+gnsspath: 'E:\BaiduSyncdisk\数据\测试集\新仿真环境1002\GNSS测试集_无室内1002.csv'
+blepath: 'E:\BaiduSyncdisk\数据\测试集\新仿真环境1002\RSSI仿真数据_std3_40m_双信标_1002.csv'
+beaconpath: 'E:\BaiduSyncdisk\数据\测试集\新仿真环境1002\Beacon_40m_h.csv'
 
 # 输出文件夹路径
 # output folder path
-outputpath_nav: '.\dataset\测试定位结果_std3_UKF_0912.csv'
-outputpath_error: '.\dataset\测试误差结果_std3_UKF_0912.csv'
-outputpath_std: '.\dataset\测试标准差结果_std3_UKF_0912.csv'
+outputpath_nav: '.\dataset\测试定位结果_std3_UKF_NHC_alt_40m_b2_1003.csv'
+outputpath_error: '.\dataset\测试误差结果_std3_UKF_NHC_alt_40m_b2_1003.csv'
+outputpath_std: '.\dataset\测试标准差结果_std3_UKF_NHC_alt_40m_b2_1003.csv'
 
 # IMU文件列数 (只会用前7列IMU数据)
 # IMU data columns, only use the first seven columns
