@@ -65,9 +65,10 @@ class GINSOptions:
         self.BLE_n = 0.0
         ## 初始时间
         self.starttime = 0.0
-        ## 是否使用NHC与高度更新
+        ## 是否使用NHC与高度更新与鲁棒估计
         self.ifNHC = 0
         self.ifALT = 0
+        self.ifHuber = 0
 
 class NHCData:
     def __init__(self):
