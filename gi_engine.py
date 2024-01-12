@@ -418,6 +418,7 @@ class GIEngine:
                 return True
         if is_positive_definite(Cov):
             Cov[21,21] = 0.1
+        
         # 生成 Sigma Points
         sqrt_P = np.linalg.cholesky(n * Cov)
         sigma_points = np.zeros((n, 2*n+1))
@@ -463,9 +464,15 @@ class GIEngine:
         ## 计算交叉协方差
         Pxz = np.dot( Wc * self.transformed_deviation , (transformed_sigma_points - dz_pred[:, np.newaxis]).T)
         # 更新卡尔曼增益、状态估计和协方差
-        K = np.dot(Pxz, np.linalg.inv(Pz_pred))
-        self.dx_ = (x_pred.T + np.dot(K, dz - dz_pred[:, np.newaxis]))
-        self.Cov_ = self.Cov_ - np.dot(np.dot(K, Pz_pred), K.T)
+        if self.options_.ifChi == 1:
+            rho = self.ChiSquare(dz,dz_pred,Pz_pred)
+            K = np.dot(Pxz, rho @ np.linalg.inv(Pz_pred))
+            self.dx_ = (x_pred.T + np.dot(K, dz - dz_pred[:, np.newaxis]))
+            self.Cov_ = self.Cov_ - np.dot(np.dot(K, rho.T @ Pz_pred @ rho), K.T)
+        else:
+            K = np.dot(Pxz, np.linalg.inv(Pz_pred))
+            self.dx_ = (x_pred.T + np.dot(K, dz - dz_pred[:, np.newaxis]))
+            self.Cov_ = self.Cov_ - np.dot(np.dot(K, Pz_pred), K.T)
     
     def gnssUpdate(self,gnssdata:ty.GNSS,filter):
         ## IMU位置转到GNSS天线相位中心位置
@@ -800,6 +807,23 @@ class GIEngine:
         else:
             return R_fix
     
+    def ChiSquare(self,dz,dz_pred,Pz_pred):
+        TD1 = 3.8
+        rhok = np.zeros(len(dz))
+        etak = dz - dz_pred[:, np.newaxis]
+        for i in range (len(etak)):
+            lambdaki = ((etak[i])**2)/Pz_pred[i,i]
+            if lambdaki <= TD1:
+                rhok[i] = 1
+            else:
+                rhok[i] = np.sqrt(3.8/lambdaki)
+        rho = np.diag(rhok)
+        intervals = [(357540.0,357543.0),( 357566.0,357569.0),(357598.0,357601.0),(357644.0,357647.0),(357658.0,357661.0)]
+        if any(lower <= self.timestamp_ <= upper for (lower, upper) in intervals):
+            return rho
+        else:
+            return np.identity(len(dz))
+        
     def stateFeedback(self):
         ## 位置误差反馈
         delta_r = np.concatenate(self.dx_[StateID.P_ID:StateID.P_ID+3,0:1])

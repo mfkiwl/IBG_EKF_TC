@@ -69,6 +69,7 @@ def LoadOptions():
     options.ifNHC = config['NHC']
     options.ifALT = config['ALT']
     options.ifHuber = config['Huber']
+    options.ifChi = config['Chi']
     
     return options
 

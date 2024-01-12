@@ -3,18 +3,19 @@ filter: 'UKF'
 ## 是否使用NHC与高度更新与鲁棒估计
 NHC : 1
 ALT : 1
-Huber : 1
+Huber : 0
+Chi : 0
 # IMU和GNSS数据文件路径
 # imudata and gnssdata filepath
 imupath: 'E:\BaiduSyncdisk\数据\测试集\IMU测试集.csv'
 gnsspath: 'E:\BaiduSyncdisk\数据\测试集\仿真环境11.11\GNSS测试集_无室内_std3_1111.csv'
-blepath: 'E:\BaiduSyncdisk\数据\测试集\仿真环境11.11\BLE数据\RSSI仿真数据_std3_40m_NLOS_2信标_1111.csv'
+blepath: 'E:\BaiduSyncdisk\数据\测试集\仿真环境11.11\BLE数据\布局研究\RSSI仿真数据_60m_双边_3信标.csv'
 
 # 输出文件夹路径
 # output folder path
-outputpath_nav: 'E:\BaiduSyncdisk\数据\测试集\仿真环境11.11\定位结果\定位结果_std3_NLOS_HUKF_NHC_alt_40m_b2_1111.csv'
-outputpath_error: 'E:\BaiduSyncdisk\数据\测试集\仿真环境11.11\误差结果\误差结果_std3_NLOS_HUKF_NHC_alt_40m_b2_1111.csv'
-outputpath_std: 'E:\BaiduSyncdisk\数据\测试集\仿真环境11.11\标准差结果\标准差结果_std3_NLOS_HUKF_NHC_alt_40m_b2_1111.csv'
+outputpath_nav: 'E:\BaiduSyncdisk\数据\测试集\仿真环境11.11\定位结果\不同布局\定位结果_60m_双边_3信标.csv'
+outputpath_error: 'E:\BaiduSyncdisk\数据\测试集\仿真环境11.11\误差结果\不同布局\误差结果_60m_双边_3信标.csv'
+outputpath_std: 'E:\BaiduSyncdisk\数据\测试集\仿真环境11.11\标准差结果\不同布局\标准差结果_60m_双边_3信标.csv'
 
 # IMU文件列数 (只会用前7列IMU数据)
 # IMU data columns, only use the first seven columns
@@ -73,7 +74,7 @@ gbstd: [20.0, 20.0, 20.0]       # [deg/hr]
 abstd: [300.0, 300.0, 300.0]    # [mGal]
 gsstd: [550.0, 550.0, 550.0]  # [ppm]
 asstd: [300.0, 300.0, 300.0]  # [ppm]
-rsstd: 2                     #dBm
+rsstd: 3                   #dBm
 corrtime: 1.0                    # [hr]
 
 # 自己的IMU

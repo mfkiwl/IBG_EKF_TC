@@ -69,6 +69,7 @@ class GINSOptions:
         self.ifNHC = 0
         self.ifALT = 0
         self.ifHuber = 0
+        self.ifChi = 0
 
 class NHCData:
     def __init__(self):
