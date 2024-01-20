@@ -468,7 +468,7 @@ class GIEngine:
             rho = self.ChiSquare(dz,dz_pred,Pz_pred)
             K = np.dot(Pxz, rho @ np.linalg.inv(Pz_pred))
             self.dx_ = (x_pred.T + np.dot(K, dz - dz_pred[:, np.newaxis]))
-            self.Cov_ = self.Cov_ - np.dot(np.dot(K, rho.T @ Pz_pred @ rho), K.T)
+            self.Cov_ = self.Cov_ - np.dot(np.dot(K, Pz_pred), K.T)
         else:
             K = np.dot(Pxz, np.linalg.inv(Pz_pred))
             self.dx_ = (x_pred.T + np.dot(K, dz - dz_pred[:, np.newaxis]))
@@ -816,7 +816,7 @@ class GIEngine:
             if lambdaki <= TD1:
                 rhok[i] = 1
             else:
-                rhok[i] = np.sqrt(3.8/lambdaki)
+                rhok[i] = np.sqrt(TD1/(lambdaki*10))
         rho = np.diag(rhok)
         intervals = [(357540.0,357543.0),( 357566.0,357569.0),(357598.0,357601.0),(357644.0,357647.0),(357658.0,357661.0)]
         if any(lower <= self.timestamp_ <= upper for (lower, upper) in intervals):
