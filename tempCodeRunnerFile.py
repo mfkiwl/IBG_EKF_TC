@@ -1,1 +1,1 @@
-*5
+lambda x: eval(x)
